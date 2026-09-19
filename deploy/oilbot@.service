@@ -1,0 +1,16 @@
+[Unit]
+Description=Oil observation %i (no broker execution)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/oil
+ExecStart=%h/oil/.venv/bin/python -m oilbot record --component %i --config configs/observe.yaml
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=200
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

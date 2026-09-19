@@ -1,0 +1,64 @@
+{
+  "definitions": [
+    {
+      "instrument_id": "CL-2026-10",
+      "product": "CL",
+      "month": "2026-10",
+      "exchange": "NYMEX",
+      "currency": "USD",
+      "multiplier": "1000",
+      "tick_size": "0.01",
+      "last_trade_at": "2026-09-22T18:00:00Z",
+      "sessions": [
+        {"open": "2026-09-18T00:00:00Z", "close": "2026-09-18T21:00:00Z"}
+      ],
+      "available_at": "2026-09-17T00:00:00Z",
+      "vendor_id": "fixture-cl-v1",
+      "data_mode": "fixture"
+    },
+    {
+      "instrument_id": "MCL-2026-10",
+      "product": "MCL",
+      "month": "2026-10",
+      "exchange": "NYMEX",
+      "currency": "USD",
+      "multiplier": "100",
+      "tick_size": "0.01",
+      "last_trade_at": "2026-09-22T18:00:00Z",
+      "sessions": [
+        {"open": "2026-09-18T00:00:00Z", "close": "2026-09-18T21:00:00Z"}
+      ],
+      "available_at": "2026-09-17T00:00:00Z",
+      "vendor_id": "fixture-mcl-v1",
+      "data_mode": "fixture"
+    }
+  ],
+  "events": [
+    {
+      "instrument_id": "CL-2026-10",
+      "available_at": "2026-09-18T12:00:00Z",
+      "bid": "72.00",
+      "ask": "72.02",
+      "bid_size": 10,
+      "ask_size": 10,
+      "bid_at": "2026-09-18T12:00:00Z",
+      "ask_at": "2026-09-18T12:00:00Z",
+      "sequence": 1,
+      "data_mode": "fixture",
+      "subscription": "synthetic-v1"
+    },
+    {
+      "instrument_id": "MCL-2026-10",
+      "available_at": "2026-09-18T12:00:05Z",
+      "bid": "72.00",
+      "ask": "72.02",
+      "bid_size": 10,
+      "ask_size": 10,
+      "bid_at": "2026-09-18T12:00:05Z",
+      "ask_at": "2026-09-18T12:00:05Z",
+      "sequence": 1,
+      "data_mode": "fixture",
+      "subscription": "synthetic-v1"
+    }
+  ]
+}
