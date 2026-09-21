@@ -22,7 +22,7 @@ class OilConfig:
         return self.raw["extraction"]
 
     def db(self, name: str) -> Path:
-        if name not in {"news", "analysis", "runtime"}:
+        if name not in {"news", "analysis", "runtime", "forward"}:
             raise ValueError("unknown journal")
         return self.root / f"{name}.sqlite3"
 
@@ -32,6 +32,8 @@ def load_config(path: str | Path) -> OilConfig:
     raw = yaml.safe_load(path.read_text())
     if raw.get("mode") != "observe" or raw.get("broker_execution") != "disabled":
         raise ValueError("oil supports observation only; broker execution must be disabled")
+    if raw.get("pipeline", "reviewed") not in {"reviewed", "forward"}:
+        raise ValueError("unknown observation pipeline")
     if raw.get("market", {}).get("provider") != "fixture":
         raise ValueError("live provider not qualified; only fixture adapter is implemented")
     extraction = raw["extraction"]
@@ -51,7 +53,7 @@ def load_config(path: str | Path) -> OilConfig:
             raise ValueError("minimum pilot polling interval is 60 seconds")
         if urlparse(source["url"]).scheme != "https":
             raise ValueError("HTTPS source required")
-        if source["adapter"] not in {"rss", "adnoc", "fujairah", "ukmto", "structured"}:
+        if source["adapter"] not in {"rss", "adnoc", "fujairah", "ukmto", "structured", "ofac", "centcom"}:
             raise ValueError("unknown source adapter")
         for key in ("owner", "role", "allowed_hosts", "rights", "revision_policy", "timestamp_precision"):
             if not source.get(key):

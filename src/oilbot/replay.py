@@ -54,7 +54,11 @@ def export_manifest(config, destination: Path) -> Path:
         raise ValueError("snapshot destination already exists")
     destination.mkdir(parents=True)
     files = {}
-    for component in ("analysis", "news", "runtime"):
+    components = ["analysis"]
+    if config.raw.get("pipeline") == "forward" or config.db("forward").exists():
+        components.append("forward")
+    components += ["news", "runtime"]
+    for component in components:
         name = f"{component}.sqlite3"
         files[name] = Journal(config.db(component)).backup(destination / name)
     market_records, gaps = read_archive(config.root / "quotes")
@@ -62,7 +66,7 @@ def export_manifest(config, destination: Path) -> Path:
     files["market.json"] = hashlib.sha256((destination / "market.json").read_bytes()).hexdigest()
     records = []
     import sqlite3
-    for name in ("news", "analysis", "runtime"):
+    for name in components:
         with sqlite3.connect(f"file:{destination / (name + '.sqlite3')}?mode=ro&immutable=1", uri=True) as db:
             db.row_factory = sqlite3.Row
             records.extend({**dict(row), "payload": json.loads(row["payload"])} for row in db.execute("SELECT * FROM records ORDER BY seq"))
@@ -78,7 +82,8 @@ def export_manifest(config, destination: Path) -> Path:
                 "config": config.raw, "config_hash": digest(config.raw), "files": files,
                 "record_count": len(records), "records_hash": digest(reader.records),
                 "decision_inputs_hash": digest(reader.decision_inputs()),
-                "dataset_role": "engineering_fixture" if not market_records or any(r["payload"].get("data_mode") == "fixture" for r in market_records) else "observation",
+                "dataset_role": "forward_news_only" if config.raw.get("pipeline") == "forward" and not market_records else (
+                    "engineering_fixture" if not market_records or any(r["payload"].get("data_mode") == "fixture" for r in market_records) else "observation"),
                 "economic_evaluation": "unavailable"}
     atomic_json(destination / "manifest.json", manifest)
     return destination / "manifest.json"
@@ -96,7 +101,10 @@ def load_manifest(path: Path) -> tuple[dict, ReplayReader, dict]:
     # Read snapshots without initializing/migrating them or changing hash-bound bytes.
     import sqlite3
     records = []
-    for name in ("news", "analysis", "runtime"):
+    components = ["news", "analysis", "runtime"]
+    if "forward.sqlite3" in manifest["files"]:
+        components.append("forward")
+    for name in components:
         with sqlite3.connect(f"file:{path.parent / (name + '.sqlite3')}?mode=ro&immutable=1", uri=True) as db:
             db.row_factory = sqlite3.Row
             records.extend({**dict(row), "payload": json.loads(row["payload"])} for row in db.execute("SELECT * FROM records ORDER BY seq"))

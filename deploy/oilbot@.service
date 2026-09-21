@@ -5,7 +5,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=%h/oil
-ExecStart=%h/oil/.venv/bin/python -m oilbot record --component %i --config configs/observe.yaml
+ExecStart=%h/oil/.venv/bin/python -m oilbot record --component %i --config configs/forward.yaml
 Restart=on-failure
 RestartSec=30
 TimeoutStopSec=200

@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlparse, urldefrag
 
 import requests
 from bs4 import BeautifulSoup
+from urllib3.exceptions import HTTPError as TransportError
 
 from .clock import instant, stamp, utc_now
 from .schema import NewsItem, digest
@@ -83,7 +84,8 @@ class RSSAdapter:
                 status = "correction" if re.match(r"^CORRECTION\b", title, re.I) else "update"
             result.append(NewsItem(native, link, title, title + "\n" + body,
                                    published(text("pubDate") or text("updated") or text("published")),
-                                   status=status, origin=origin(title + " " + body)))
+                                   status=status, origin=origin(title + " " + body),
+                                   author=clean(text("creator") or text("author")) or None))
         return result
 
 
@@ -117,6 +119,8 @@ class ListingAdapter:
                 self.kind == "adnoc" and bool(re.search(r"/press-releases/\d{4}/", href))
                 or self.kind == "fujairah" and (".pdf" in href.lower() or bool(re.search(r"\bNTM\s*\d", label, re.I)))
                 or self.kind == "ukmto" and bool(re.search(r"\b(?:WARNING|ADVISORY|UPDATE)\s+\d", label, re.I))
+                or self.kind == "ofac" and bool(re.fullmatch(r"/recent-actions/\d{8}(?:-\d+)?", urlparse(href).path))
+                or self.kind == "centcom" and bool(re.search(r"/MEDIA/PUBLIC-RELEASES/Article/\d+/", urlparse(href).path, re.I))
             )
             if not match or href in seen or not label:
                 continue
@@ -164,9 +168,21 @@ class HTTPFetcher:
                     if not allowed(url, source):
                         raise ValueError("unregistered redirect")
                     continue
-                chunks, first = [], None
-                size = 0
-                for chunk in response.iter_content(65536):
+                # A 64 KiB iterator chunk is not the first byte. Read one decoded
+                # body byte first; this is application receipt, not socket timing.
+                def read_body(size):
+                    try:
+                        return response.raw.read(size, decode_content=True)
+                    except TransportError as exc:
+                        raise requests.RequestException(str(exc)) from exc
+
+                head = read_body(1)
+                first = stamp() if head else None
+                chunks = [head] if head else []
+                size = len(head)
+                # Keep the same urllib3 read path for the entire body. Switching
+                # to iter_content/read_chunked after read() corrupts chunk framing.
+                for chunk in iter(lambda: read_body(65536), b""):
                     if time.monotonic_ns() - started["monotonic_ns"] > 30_000_000_000:
                         raise ValueError("source response exceeded total deadline")
                     if first is None:
@@ -178,7 +194,9 @@ class HTTPFetcher:
                 return {"url": url, "status": response.status_code,
                         "content_type": response.headers.get("Content-Type", ""),
                         "headers": {k: response.headers[k] for k in ("ETag", "Last-Modified", "Retry-After") if k in response.headers},
-                        "started": started, "first_byte": first, "received": stamp(), "body": b"".join(chunks)}
+                        "started": started, "first_byte": first, "received": stamp(),
+                        "first_byte_basis": "first_decoded_body_byte", "delivery": "http",
+                        "body": b"".join(chunks)}
         raise ValueError("redirect limit")
 
 

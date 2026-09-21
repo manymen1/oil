@@ -22,19 +22,25 @@ from .store import Journal, component_lock
 
 
 def preflight(config):
+    forward = config.raw.get("pipeline") == "forward"
     return {"mode": "observe", "broker_execution": "disabled", "pilot_ready": True,
             "economic_evaluation": "unavailable", "storage": str(config.root),
             "codex_available": bool(shutil.which(config.extraction.get("binary", "codex"))),
             "sources": [{"id": s["id"], "enabled": s["enabled"], "model_processing": s["rights"]["model_processing"],
                          "endpoint_qualification": s["qualification"]} for s in config.sources],
-            "blockers": ["LIVE_MARKET_DATA_UNQUALIFIED", "NO_BROKER_ADAPTER", "SOURCE_MODEL_RIGHTS_REQUIRE_QUALIFICATION"],
-            "next": "Capture public source payloads and fixtures; review quality and data budget."}
+            "blockers": (["LIVE_MARKET_DATA_UNQUALIFIED", "AUTOMATIC_OUTCOMES_NOT_IMPLEMENTED"] if forward else
+                         ["LIVE_MARKET_DATA_UNQUALIFIED", "NO_BROKER_ADAPTER", "SOURCE_MODEL_RIGHTS_REQUIRE_QUALIFICATION"]),
+            "pipeline": config.raw.get("pipeline", "reviewed"),
+            "forward_recorder_ready": forward,
+            "planned_market_provider": config.raw["market"].get("planned_provider"),
+            "live_market_ready": False,
+            "next": "Record forward news; connect and qualify live CL/MCL data before measuring outcomes."}
 
 
 def status(config):
     output = preflight(config)
     output["journals"] = {}
-    for name in ("news", "analysis", "runtime"):
+    for name in ("news", "analysis", "runtime", "forward"):
         store = Journal(config.db(name))
         from collections import Counter
         output["journals"][name] = dict(Counter(r["kind"] for r in store.records()))
@@ -46,6 +52,8 @@ def status(config):
 
 
 def record(config, component: str, *, once: bool, fixture: Path | None, stop=None):
+    if config.raw.get("pipeline") == "forward" and fixture is not None:
+        raise ValueError("fixtures are not allowed in forward collection; use the isolated offline demo")
     stop = stop or threading.Event()
     runtime = Journal(config.db("runtime"))
     with component_lock(config.root, component):
@@ -58,7 +66,13 @@ def record(config, component: str, *, once: bool, fixture: Path | None, stop=Non
         if component == "news":
             collector = NewsCollector(Journal(config.db("news")), config.sources)
             work = lambda: collector.poll_once()
+        elif component == "forward":
+            from .forward import ForwardRecorder
+            worker = ForwardRecorder(Journal(config.db("news")), Journal(config.db("forward")), config.raw["assets"])
+            work = worker.run_once
         elif component == "analysis":
+            if config.raw.get("pipeline") == "forward":
+                raise ValueError("forward pipeline uses --component forward; model analysis is disabled")
             news, analysis = Journal(config.db("news")), Journal(config.db("analysis"))
             reducer = IncidentReducer(news, analysis, config.raw["assets"])
             worker = AnalysisWorker(news, analysis, CodexExtractor(config.extraction), config.extraction, reducer,
@@ -96,7 +110,7 @@ def record(config, component: str, *, once: bool, fixture: Path | None, stop=Non
                     runtime.set_cursor(db, "runtime:" + component, last)
                 if once:
                     return result
-                stop.wait(5 if component == "analysis" and result.get("pending") else 30)
+                stop.wait(1 if component == "forward" else (5 if component == "analysis" and result.get("pending") else 30))
         finally:
             runtime.append("runtime_stop", {"component": component, "clock": stamp()})
     return {"stopped": component}
@@ -109,7 +123,7 @@ def main(argv=None):
         child = sub.add_parser(command)
         child.add_argument("--config", default="configs/observe.yaml")
         if command == "record":
-            child.add_argument("--component", choices=("news", "market", "analysis"), required=True)
+            child.add_argument("--component", choices=("news", "market", "analysis", "forward"), required=True)
             child.add_argument("--once", action="store_true")
             child.add_argument("--fixture", type=Path)
         if command in {"snapshot", "demo"}:

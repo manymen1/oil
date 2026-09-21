@@ -1,6 +1,9 @@
 # oilbot
 
-Standalone oil observation and research application. The runtime captures public source revisions, extracts evidence, tracks incidents, archives market fixtures, and exports immutable replay reports without broker execution or prediction-market dependencies.
+Standalone oil observation and research application. Current priority: **forward
+news recording**, local deterministic event candidates, and auditable incident
+lineage. No trading. IBKR is the planned market-data provider; live CL/MCL
+recording and automatic market outcomes are not connected yet.
 
 ## Install
 
@@ -13,12 +16,17 @@ python -m pip install -e ".[dev]"
 ## Quick start
 
 ```bash
-oilbot preflight
-oilbot record --component news --once
-oilbot record --component market --once --fixture tests/fixtures/market.json
-oilbot record --component analysis --once
-oilbot status
+oilbot preflight --config configs/forward.yaml
+python scripts/supervisor.py --config configs/forward.yaml --duration 45
+oilbot status --config configs/forward.yaml
+oilbot collection-health --config configs/forward.yaml
 ```
+
+The bounded smoke run stops itself. Omit `--duration 45` for a foreground
+continuous run; Ctrl-C stops all workers. No service is installed automatically.
+The forward supervisor runs `news`, `forward`, and a market worker that reports
+`WAITING_FOR_QUALIFIED_LIVE_FEED`. It never calls a model or loads market fixtures.
+See [the forward recorder and roadmap](docs/forward-collection.md).
 
 ## Source qualification and collection health
 
@@ -50,8 +58,10 @@ model separates publishers from claim origins and tracks corroboration,
 contradictions, corrections and deletions.
 
 See [the research workflow](docs/research.md) and [the news-source and claim guide](docs/news-mesh.md).
-The 39-source profile catalog is not an activated live news network. Real licensed
-market files and reviewed event episodes are still needed for an event study.
+The 39-source profile catalog is not an activated live news network. Historical
+event reconstruction is deferred; the existing offline tools remain available
+for diagnostics. Actual local news receipts and qualified live market data are
+needed for forward outcome research.
 Draft settings are in `configs/research.json`; no strategy edge or live execution
 has been qualified.
 
@@ -59,8 +69,9 @@ has been qualified.
 
 - `src/oilbot/` — standalone oil runtime package
 - `configs/observe.yaml` — observation and source configuration
+- `configs/forward.yaml` — isolated personal forward recorder configuration
 - `tests/test_oil.py` — focused oil verification suite
-- `scripts/supervisor.py` — local supervisor for news/market/analysis workers
+- `scripts/supervisor.py` — local supervisor; forward workers by default
 - `deploy/oilbot@.service` — systemd user unit for a single host
 - `docs/observation.md` — operational notes and guardrails
 

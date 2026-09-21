@@ -20,7 +20,7 @@ from oilbot.store import component_lock
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--config", default=str(REPO / "configs/observe.yaml"))
+    parser.add_argument("--config", default=str(REPO / "configs/forward.yaml"))
     parser.add_argument("--duration", type=float, help="Optional bounded smoke-run duration in seconds")
     args = parser.parse_args()
     config = load_config(args.config)
@@ -31,7 +31,13 @@ def main():
     started = time.monotonic()
     with component_lock(config.root, "supervisor"):
         try:
-            for component in ("news", "market", "analysis"):
+            forward = config.raw.get("pipeline") == "forward"
+            if forward:
+                # Establish the persistent experiment boundary before news starts.
+                from oilbot.forward import ForwardRecorder
+                from oilbot.store import Journal
+                ForwardRecorder(Journal(config.db("news")), Journal(config.db("forward")), config.raw["assets"])
+            for component in (("forward", "news", "market") if forward else ("news", "market", "analysis")):
                 logs[component] = (config.root / f"{component}.log").open("a")
                 restarts[component], next_start[component] = 0, 0
             while not stopped.is_set():

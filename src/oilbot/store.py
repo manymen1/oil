@@ -171,14 +171,20 @@ class Journal:
                     continue
                 rid = digest([story, content, previous["revision_id"] if previous else None])
                 payload = {**to_dict(item), "source_id": source["id"], "source_role": source["role"],
+                           "source_type": source.get("source_type", source["role"]),
                            "source_profile": source.get("profile"),
                            "story_id": story, "content_hash": content,
                            "revision": previous["revision"] + 1 if previous else 1,
                            "supersedes_id": previous["revision_id"] if previous else None,
                            "input_revision_ids": [observation_id], "transform": "source-v1",
                            "observed_at": observation["available_at"],
+                           "local_received_at": observation["payload"]["received"]["utc"],
+                           "request_started_at": observation["payload"].get("started", {}).get("utc"),
+                           "first_byte_at": (observation["payload"].get("first_byte") or {}).get("utc"),
+                           "publisher_timestamp": item.published_at,
                            "initial_snapshot": initial_snapshot,
                            "origin_status": "attributed" if item.origin else "unknown",
+                           "claim_origin": None,  # Publication/wire attribution is not an original actor claim.
                            "model_processing": source["rights"]["model_processing"]}
                 self.append("story_revision", payload, available_at=at, record_id=rid, db=db)
                 self.set_cursor(db, "story:" + story, {"content_hash": content, "revision_id": rid, "revision": payload["revision"]})

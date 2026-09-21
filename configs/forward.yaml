@@ -1,0 +1,113 @@
+# Personal forward capture only. Public access checks are NOT feed/SLA or
+# redistribution/model-processing qualification. No historical event imports.
+mode: observe
+pipeline: forward
+broker_execution: disabled
+registry_version: forward-sources-v1
+asset_registry_version: gulf-assets-v1
+storage:
+  root: ../data/forward
+  quote_flush_seconds: 1
+  retention: manual_review_no_automatic_deletion
+market:
+  provider: fixture
+  planned_provider: ibkr
+  required_live_mode: realtime
+  qualified: false
+  # No fixture is loaded by the supervisor. Market worker reports WAITING.
+extraction:
+  provider: codex_cli
+  model: gpt-5.5
+  binary: codex
+  fallback: null
+  workers: 2
+  daily_attempts: 100
+  timeout_seconds: 180
+  deadline_seconds: 10
+  # Legacy schema only; model analysis is disabled for pipeline: forward.
+sources:
+  - id: al_jazeera
+    owner: Al Jazeera
+    role: journalism
+    source_type: regional_news
+    url: https://www.aljazeera.com/xml/rss/all.xml
+    adapter: rss
+    enabled: true
+    allowed_hosts: [www.aljazeera.com, aljazeera.com]
+    poll_seconds: 60
+    timestamp_precision: publisher_reported
+    revision_policy: native_id_and_content_hash
+    qualification: HTTP_200_RSS_25_items_observed_2026-09-21_not_live_qualified
+    rights: {capture: public_pilot_feed_only, model_processing: pending, retention: review_before_redistribution}
+  - id: iran_international
+    owner: Iran International
+    role: journalism
+    source_type: regional_news
+    url: https://www.iranintl.com/en/feed
+    adapter: rss
+    enabled: true
+    allowed_hosts: [www.iranintl.com, iranintl.com]
+    poll_seconds: 60
+    timestamp_precision: publisher_reported
+    revision_policy: native_id_and_content_hash
+    qualification: HTTP_200_XML_50_items_observed_2026-09-21_not_live_qualified
+    rights: {capture: public_pilot_feed_only, model_processing: pending, retention: review_before_redistribution}
+  - id: gcaptain
+    owner: gCaptain
+    role: journalism
+    source_type: shipping_media
+    url: https://gcaptain.com/feed/
+    adapter: rss
+    enabled: true
+    allowed_hosts: [gcaptain.com, www.gcaptain.com]
+    poll_seconds: 60
+    timestamp_precision: publisher_reported
+    revision_policy: native_id_and_content_hash
+    qualification: public_pilot_not_live_qualified
+    rights: {capture: public_pilot_feed_only, model_processing: pending, retention: review_before_redistribution}
+  - id: centcom
+    owner: US Central Command
+    role: official
+    source_type: official
+    url: https://www.centcom.mil/MEDIA/PUBLIC-RELEASES/
+    adapter: centcom
+    enabled: true
+    allowed_hosts: [www.centcom.mil]
+    poll_seconds: 60
+    timestamp_precision: unknown
+    revision_policy: canonical_url_and_content_hash
+    qualification: HTTP_200_listing_observed_2026-09-21_not_live_qualified
+    rights: {capture: public_pilot_listing_only, model_processing: pending, retention: review_before_redistribution}
+  - id: ofac
+    owner: US Treasury OFAC
+    role: official
+    source_type: official
+    url: https://ofac.treasury.gov/recent-actions
+    adapter: ofac
+    enabled: true
+    allowed_hosts: [ofac.treasury.gov]
+    poll_seconds: 60
+    timestamp_precision: unknown
+    revision_policy: canonical_url_and_content_hash
+    qualification: HTTP_200_listing_observed_2026-09-21_not_live_qualified
+    rights: {capture: public_pilot_listing_only, model_processing: pending, retention: review_before_redistribution}
+  - id: aramco
+    owner: Saudi Aramco
+    role: operator
+    source_type: operator
+    url: https://www.aramco.com/api/v1/com/rss/news?sc_lang=en
+    adapter: rss
+    enabled: true
+    allowed_hosts: [www.aramco.com, aramco.com]
+    poll_seconds: 60
+    timestamp_precision: publisher_reported
+    revision_policy: native_id_and_content_hash
+    qualification: public_pilot_not_live_qualified
+    rights: {capture: public_pilot_feed_only, model_processing: pending, retention: review_before_redistribution}
+assets:
+  - {id: hormuz, aliases: [Strait of Hormuz, Hormuz], type: maritime_route, geography: Gulf, owner: null}
+  - {id: bab_el_mandeb, aliases: [Bab el-Mandeb, Bab al-Mandab], type: maritime_route, geography: Red Sea, owner: null}
+  - {id: fujairah, aliases: [Fujairah], type: export_port, geography: UAE, owner: Fujairah Ports Authority}
+  - {id: ras_tanura, aliases: [Ras Tanura], type: crude_export_terminal, geography: Saudi Arabia, owner: Saudi Aramco}
+  - {id: abqaiq, aliases: [Abqaiq], type: oil_processing, geography: Saudi Arabia, owner: Saudi Aramco}
+  - {id: ruwais, aliases: [Ruwais], type: refinery, geography: UAE, owner: ADNOC}

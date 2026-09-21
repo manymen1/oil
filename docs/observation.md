@@ -1,5 +1,8 @@
 # Oil observation pilot
 
+This is the legacy reviewed-extraction workflow. The current forward-only
+priority and run commands are in [forward collection](forward-collection.md).
+
 This independent application captures source revisions, extracts evidence, tracks
 incident revisions, and exports immutable replay snapshots. It contains no trading
 adapter. CL/MCL fixtures and simulator results are engineering diagnostics, not
@@ -37,14 +40,15 @@ or network service. Use a new output directory for another immutable run.
 For independently supervised continuous collection on WSL:
 
 ```bash
-.venv/bin/python scripts/supervisor.py
+.venv/bin/python scripts/supervisor.py --config configs/observe.yaml
 ```
 
 Ctrl-C shuts down all three children. For a bounded runtime test add `--duration
 45`. Logs are under the configured data directory. No service is installed or
 enabled automatically. The optional systemd user template in
-`deploy/oilbot@.service` can supervise `news`, `market`, and `analysis` on a
-qualified always-on Linux host. The template assumes the repository is checked
+`deploy/oilbot@.service` now defaults to the forward configuration and components
+`news`, `market`, and `forward`. To run this legacy workflow, explicitly change
+its config to `configs/observe.yaml`. The template assumes the repository is checked
 out at `~/oil`; adjust its two paths if it is installed elsewhere. Do not run
 both supervisors simultaneously.
 Component locks reject duplicate writers. WSL sleep and restarts create visible
