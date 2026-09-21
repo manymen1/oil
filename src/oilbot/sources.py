@@ -130,6 +130,9 @@ class ListingAdapter:
 
 
 def adapter(source: dict):
+    if source["adapter"] == "structured":
+        from .provenance import StructuredNewsAdapter
+        return StructuredNewsAdapter()
     return RSSAdapter() if source["adapter"] == "rss" else ListingAdapter(source["adapter"])
 
 
@@ -234,6 +237,8 @@ class NewsCollector:
             source = registry.get(payload["source_id"])
             if not source:
                 continue
+            if payload.get("parser") == "structured":
+                source = {**source, "adapter": "structured", "profile": payload.get("source_profile")}
             try:
                 if payload["status"] not in {200, 304}:
                     raise ParseFailure("RECOVERED_HTTP_" + str(payload["status"]))
@@ -244,6 +249,8 @@ class NewsCollector:
                     items = [self.pdf_item(body, payload["url"])]
                 else:
                     items = adapter(source).parse(body, payload["url"], payload["content_type"])
+                    if source["adapter"] == "structured" and any(not allowed(item.url, source) for item in items):
+                        raise ParseFailure("UNREGISTERED_ITEM_URL")
                     if source["adapter"] == "adnoc" and not re.search(r"/press-releases/\d{4}/", payload["url"]):
                         items = []
                 self.store.accept_items(source, row["id"], items, self.store.cursor("source:" + source["id"], {}))
@@ -281,6 +288,8 @@ class NewsCollector:
                 raise ParseFailure(f"HTTP_{status}")
             else:
                 items = adapter(source).parse(response["body"], response["url"], response["content_type"])
+                if source["adapter"] == "structured" and any(not allowed(item.url, source) for item in items):
+                    raise ParseFailure("UNREGISTERED_ITEM_URL")
                 health = "OK" if items else "EMPTY"
             next_cursor = {"etag": response["headers"].get("ETag", cursor.get("etag")),
                            "last_modified": response["headers"].get("Last-Modified", cursor.get("last_modified")),

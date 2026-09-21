@@ -29,6 +29,20 @@ oilbot replay --manifest data/oil-demo/snapshot/manifest.json
 
 The demo writes a source/market manifest and JSON/HTML report without calling any remote model or broker service.
 
+## Transition research and news provenance
+
+The research pipeline now supports explicit quote/trade/status records, optional
+offline Databento DBN/CSV import, causal CL1/CL2/MCL1 features, dated economic
+episodes, forward executable outcomes, and residual-response gates. The news
+model separates publishers from claim origins and tracks corroboration,
+contradictions, corrections and deletions.
+
+See [the research workflow](docs/research.md) and [the news-source and claim guide](docs/news-mesh.md).
+The 39-source profile catalog is not an activated live news network. Real licensed
+market files and reviewed event episodes are still needed for an event study.
+Draft settings are in `configs/research.json`; no strategy edge or live execution
+has been qualified.
+
 ## Repository layout
 
 - `src/oilbot/` — standalone oil runtime package

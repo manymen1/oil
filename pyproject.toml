@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+databento = ["databento==0.86.0"]
 dev = [
     "pytest==9.1.1",
 ]

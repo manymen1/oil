@@ -32,7 +32,7 @@ class ExecutionAssumptions:
 
 
 def quote_at(quotes: list[MarketEvent], at: str, definition: InstrumentDefinition, max_age: float) -> MarketEvent | None:
-    available = [q for q in quotes if q.instrument_id == definition.instrument_id and instant(q.available_at) <= instant(at)]
+    available = [q for q in quotes if q.event_type == "quote" and q.instrument_id == definition.instrument_id and instant(q.available_at) <= instant(at)]
     if not available:
         return None
     quote = max(available, key=lambda q: (instant(q.available_at), q.sequence))
@@ -97,45 +97,38 @@ def baseline_sides(news_side: int, momentum_ticks: int) -> dict[str, int]:
 
 
 def research_candidate(store: Journal, incident: dict) -> str:
-    existing = store.cursor("candidate:" + incident["id"])
+    """Persist a conservative v2 decision when no research context is supplied.
+
+    Full cluster/market/support contexts are evaluated by the dataset builder.
+    The observation collector cannot promote a bare operational-status change.
+    """
+    from .strategy import strategy_v2
+    key = "candidate:oil-residual-v2:" + incident["id"]
+    existing = store.cursor(key)
     if existing:
         return existing
     value = incident["payload"]
-    reasons = []
-    if value.get("initial_snapshot", True):
-        reasons.append("INITIAL_CAPTURE_BACKFILL")
-    if not value["novel"]:
-        reasons.append("NO_MATERIAL_CHANGE")
-    if value["late"]:
-        reasons.append("ANALYSIS_DEADLINE_EXCEEDED")
-    if value["contradictions"]:
-        reasons.append("CONTRADICTORY_EVIDENCE")
-    if not value["asset_ids"]:
-        reasons.append("UNREGISTERED_ASSET")
-    if not set(value.get("asset_types", [])) & {"maritime_route", "export_port", "crude_export_terminal", "oil_processing", "production"}:
-        reasons.append("OUTSIDE_CRUDE_DISRUPTION_SCOPE")
-    status = value["operational_status"]
     previous = store.get(value["supersedes_id"]) if value["supersedes_id"] else None
-    previous_status = previous["payload"]["operational_status"] if previous else None
-    family, side = None, 0
-    if status in {"suspended", "impaired"} and previous_status not in {"suspended", "impaired"}:
-        family, side = "disruption", 1
-    elif status in {"restored", "partly_restored"} and previous_status in {"suspended", "impaired"}:
+    before = previous["payload"]["operational_status"] if previous else "unknown"
+    after = value["operational_status"]
+    family, side = "other", 0
+    if before in {"operating", "restored"} and after in {"impaired", "suspended"}:
+        family, side = "physical_disruption", 1
+    elif before in {"impaired", "suspended", "partly_restored"} and after in {"partly_restored", "restored"}:
         family, side = "restoration", -1
-    elif value["evidence_status"] == "withdrawn":
-        family = "correction"
-    else:
-        reasons.append("NO_ELIGIBLE_OPERATIONAL_TRANSITION")
-    if value["evidence_status"] != "primary_operational_report" and family != "correction":
-        reasons.append("EVIDENCE_NOT_ESTABLISHED")
-    payload = {"input_revision_ids": [incident["id"]], "incident_id": value["incident_id"],
-               "episode_id": value["episode_id"], "policy": "oil-incident-v1", "family": family,
-               "direction": side, "action": "ABSTAIN" if reasons else "RESEARCH_CANDIDATE",
-               "reason_codes": reasons + ["MARKET_DATA_UNQUALIFIED"], "authorized_contracts": 0,
-               "primary_horizon_seconds": 1800, "exploratory_horizons_seconds": [300, 3600, 14400]}
+    event = {"event_family": family, "event_transition": before + "_to_" + after,
+             "direction": side, "episode_id": value.get("episode_id"), "episode_verified": False,
+             "novelty": value["novel"], "initial_snapshot": value.get("initial_snapshot", True),
+             "late": value["late"], "contradiction_flag": bool(value["contradictions"]),
+             "asset_types": value.get("asset_types", []), "source_authority": "unverified",
+             "decision_at": incident["available_at"], "received_at": incident["available_at"]}
+    decision = strategy_v2(event, {"decision_at": event["decision_at"], "received_at": event["received_at"]})
+    payload = {**decision, "input_revision_ids": [incident["id"]], "incident_id": value["incident_id"],
+               "episode_id": value.get("episode_id"), "family": family,
+               "context_status": "CLUSTER_MARKET_AND_HISTORICAL_CONTEXT_REQUIRED"}
     with store.transaction() as db:
         rid = store.append("decision", payload, db=db)
-        store.set_cursor(db, "candidate:" + incident["id"], rid)
+        store.set_cursor(db, key, rid)
     return rid
 
 

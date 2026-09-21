@@ -1,0 +1,620 @@
+{
+  "schema": "source-profiles-v1",
+  "note": "Discovery catalog only. No endpoints, independence relationships, subscriptions or current access rights are asserted. Existing observation sources remain configured separately.",
+  "sources": [
+    {
+      "source": "reuters",
+      "name": "Reuters",
+      "source_type": "news_agency",
+      "geography": "Global",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "Reuters"
+      ]
+    },
+    {
+      "source": "ap",
+      "name": "Associated Press",
+      "source_type": "news_agency",
+      "geography": "Global",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "AP",
+        "Associated Press"
+      ]
+    },
+    {
+      "source": "newsquawk",
+      "name": "Newsquawk Energy",
+      "source_type": "aggregator",
+      "geography": "Global",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "licensed",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "Newsquawk"
+      ]
+    },
+    {
+      "source": "the_national",
+      "name": "The National",
+      "source_type": "regional_news",
+      "geography": "Gulf",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "al_arabiya",
+      "name": "Al Arabiya",
+      "source_type": "regional_news",
+      "geography": "Gulf",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "arab_news",
+      "name": "Arab News",
+      "source_type": "regional_news",
+      "geography": "Gulf",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "iran_international",
+      "name": "Iran International",
+      "source_type": "regional_news",
+      "geography": "Iran",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "irna",
+      "name": "IRNA",
+      "source_type": "news_agency",
+      "geography": "Iran",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "mehr",
+      "name": "Mehr",
+      "source_type": "news_agency",
+      "geography": "Iran",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "tasnim",
+      "name": "Tasnim",
+      "source_type": "news_agency",
+      "geography": "Iran",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "fars",
+      "name": "Fars",
+      "source_type": "news_agency",
+      "geography": "Iran",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "al_jazeera",
+      "name": "Al Jazeera",
+      "source_type": "regional_news",
+      "geography": "Middle East",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "times_of_israel",
+      "name": "Times of Israel",
+      "source_type": "regional_news",
+      "geography": "Israel",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "jerusalem_post",
+      "name": "Jerusalem Post",
+      "source_type": "regional_news",
+      "geography": "Israel",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "haaretz",
+      "name": "Haaretz",
+      "source_type": "regional_news",
+      "geography": "Israel",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "gcaptain",
+      "name": "gCaptain",
+      "source_type": "shipping_media",
+      "geography": "Global",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "tradewinds",
+      "name": "TradeWinds",
+      "source_type": "shipping_media",
+      "geography": "Global",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "spa",
+      "name": "Saudi Press Agency",
+      "source_type": "news_agency",
+      "geography": "Saudi Arabia",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "SPA"
+      ]
+    },
+    {
+      "source": "wam",
+      "name": "Emirates News Agency",
+      "source_type": "news_agency",
+      "geography": "UAE",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "WAM"
+      ]
+    },
+    {
+      "source": "ona",
+      "name": "Oman News Agency",
+      "source_type": "news_agency",
+      "geography": "Oman",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "ONA"
+      ]
+    },
+    {
+      "source": "qna",
+      "name": "Qatar News Agency",
+      "source_type": "news_agency",
+      "geography": "Qatar",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "QNA"
+      ]
+    },
+    {
+      "source": "kuna",
+      "name": "Kuwait News Agency",
+      "source_type": "news_agency",
+      "geography": "Kuwait",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "KUNA"
+      ]
+    },
+    {
+      "source": "bna",
+      "name": "Bahrain News Agency",
+      "source_type": "news_agency",
+      "geography": "Bahrain",
+      "authority_scope": [],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "BNA"
+      ]
+    },
+    {
+      "source": "centcom",
+      "name": "US Central Command",
+      "source_type": "official",
+      "geography": "US",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "api",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "CENTCOM"
+      ]
+    },
+    {
+      "source": "dod",
+      "name": "US Department of Defense",
+      "source_type": "official",
+      "geography": "US",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "api",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "Pentagon"
+      ]
+    },
+    {
+      "source": "state_department",
+      "name": "US Department of State",
+      "source_type": "official",
+      "geography": "US",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "api",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "ofac",
+      "name": "US Treasury OFAC",
+      "source_type": "official",
+      "geography": "US",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "api",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "OFAC"
+      ]
+    },
+    {
+      "source": "white_house",
+      "name": "White House",
+      "source_type": "official",
+      "geography": "US",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "api",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "doe",
+      "name": "US Department of Energy",
+      "source_type": "official",
+      "geography": "US",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "api",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "eia",
+      "name": "US Energy Information Administration",
+      "source_type": "official",
+      "geography": "US",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "api",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "EIA"
+      ]
+    },
+    {
+      "source": "irgc",
+      "name": "Islamic Revolutionary Guard Corps",
+      "source_type": "official",
+      "geography": "Iran",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "IRGC"
+      ]
+    },
+    {
+      "source": "iran_foreign_ministry",
+      "name": "Iranian Foreign Ministry",
+      "source_type": "official",
+      "geography": "Iran",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "iran_presidency",
+      "name": "Iranian Presidency",
+      "source_type": "official",
+      "geography": "Iran",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "hormozgan_government",
+      "name": "Hormozgan Government",
+      "source_type": "official",
+      "geography": "Iran",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "ukmto",
+      "name": "UK Maritime Trade Operations",
+      "source_type": "official",
+      "geography": "Global",
+      "authority_scope": [
+        "own_statements",
+        "maritime_incidents"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "UKMTO"
+      ]
+    },
+    {
+      "source": "opec",
+      "name": "Organization of the Petroleum Exporting Countries",
+      "source_type": "official",
+      "geography": "Global",
+      "authority_scope": [
+        "own_statements"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "OPEC"
+      ]
+    },
+    {
+      "source": "aramco",
+      "name": "Saudi Aramco",
+      "source_type": "operator",
+      "geography": "Saudi Arabia",
+      "authority_scope": [
+        "own_operations"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "rss",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": [
+        "Aramco"
+      ]
+    },
+    {
+      "source": "adnoc",
+      "name": "ADNOC",
+      "source_type": "operator",
+      "geography": "UAE",
+      "authority_scope": [
+        "own_operations"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    },
+    {
+      "source": "fujairah",
+      "name": "Fujairah Ports Authority",
+      "source_type": "operator",
+      "geography": "UAE",
+      "authority_scope": [
+        "own_operations"
+      ],
+      "independence_group": null,
+      "independence_verified": false,
+      "delivery": "web",
+      "enabled": false,
+      "qualification": "pending",
+      "model_processing": "pending",
+      "aliases": []
+    }
+  ]
+}

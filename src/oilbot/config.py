@@ -51,7 +51,7 @@ def load_config(path: str | Path) -> OilConfig:
             raise ValueError("minimum pilot polling interval is 60 seconds")
         if urlparse(source["url"]).scheme != "https":
             raise ValueError("HTTPS source required")
-        if source["adapter"] not in {"rss", "adnoc", "fujairah", "ukmto"}:
+        if source["adapter"] not in {"rss", "adnoc", "fujairah", "ukmto", "structured"}:
             raise ValueError("unknown source adapter")
         for key in ("owner", "role", "allowed_hosts", "rights", "revision_policy", "timestamp_precision"):
             if not source.get(key):

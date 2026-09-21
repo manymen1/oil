@@ -42,14 +42,14 @@ class IncidentReducer:
         contradictions = [f for f in facts if f["assertion"] == "denied"]
         if len(set(operational)) > 1:
             contradictions.extend(f for f in facts if f["field"] == "operational_status")
-        if data["status"] == "withdrawal":
+        if data["status"] in {"withdrawal", "deleted"}:
             status = "unknown"
         origin = data.get("origin")
         if not origin and data["source_role"] in {"operator", "port_authority", "maritime_authority"}:
             origin = data["source_id"]
         semantic = {"assets": sorted(asset_ids), "operational_status": status,
                     "facts": sorted([{k: f[k] for k in ("field", "value", "assertion", "unit", "quantity_kind")} for f in facts], key=digest),
-                    "withdrawn": data["status"] == "withdrawal"}
+                    "withdrawn": data["status"] in {"withdrawal", "deleted"}}
         novelty = (old["payload"]["semantic_hash"] != digest(semantic) if old
                    else not extraction["payload"].get("cached", False))
         candidates = []
@@ -63,8 +63,9 @@ class IncidentReducer:
                    "transform": "incident-v1", "asset_ids": sorted(asset_ids),
                    "asset_types": sorted({a["type"] for a in self.assets if a["id"] in asset_ids}),
                    "operational_status": status, "action": [f for f in facts if f["field"] == "action"],
-                   "evidence_status": "withdrawn" if data["status"] == "withdrawal" else "disputed" if contradictions
-                       else "primary_operational_report" if origin == data["source_id"] and operational else "attributed_claim",
+                   "evidence_status": "withdrawn" if data["status"] in {"withdrawal", "deleted"} else "disputed" if contradictions
+                       else "primary_operational_report" if origin == data["source_id"] and operational
+                           and data["source_role"] in {"operator", "port_authority", "maritime_authority"} else "attributed_claim",
                    "origin_groups": [origin] if origin else [], "origin_uncertain": origin is None,
                    "contradictions": contradictions, "facts": facts, "semantic_hash": digest(semantic),
                    "novel": novelty, "candidate_links": sorted(set(candidates)), "net_lost_supply": None,

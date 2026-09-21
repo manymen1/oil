@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import socket
 import time
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,3 +29,19 @@ def stamp() -> dict:
 
 def seconds(after: str, before: str) -> float:
     return (instant(after) - instant(before)).total_seconds()
+
+
+def epoch_ns(value: str) -> int:
+    """Parse ISO timestamps without losing sub-microsecond provider precision."""
+    match = re.fullmatch(r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:[.,](\d{1,9}))?(?:Z|[+-]\d\d:\d\d)", value)
+    if match is None:
+        raise ValueError("timezone-aware ISO timestamp with at most nanosecond precision required")
+    dt = instant(value)
+    delta = dt.replace(microsecond=0) - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    digits = match[1] or ""
+    return (delta.days * 86400 + delta.seconds) * 10**9 + int(digits.ljust(9, "0") or "0")
+
+
+def iso_ns(value: int) -> str:
+    seconds, nanos = divmod(value, 10**9)
+    return datetime.fromtimestamp(seconds, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + f".{nanos:09d}Z"

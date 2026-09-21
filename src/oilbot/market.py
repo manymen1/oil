@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 
 from .clock import instant, utc_now
-from .schema import InstrumentDefinition, MarketEvent, canonical, digest, to_dict
+from .schema import InstrumentDefinition, MarketEvent, market_event, canonical, digest, to_dict
 
 
 def atomic_json(path: Path, value) -> None:
@@ -41,7 +41,7 @@ class FixtureAdapter:
 
     def events(self):
         for row in self.data["events"]:
-            event = MarketEvent(**row)
+            event = market_event(row)
             if event.data_mode != "fixture":
                 raise ValueError("fixture adapter cannot declare real-time data")
             yield event
@@ -185,7 +185,7 @@ def record_adapter(adapter, root: Path) -> dict:
                 raise ValueError("unqualified instrument")
             event.validate(definitions[event.instrument_id])
             prior = sequences.get(event.instrument_id)
-            if prior is not None and event.sequence != prior + 1:
+            if event.sequence_scope == "instrument" and prior is not None and event.sequence != prior + 1:
                 archive.append("gap", {"instrument_id": event.instrument_id, "reason": "SEQUENCE_GAP",
                                        "prior": prior, "next": event.sequence, "available_at": event.available_at})
             sequences[event.instrument_id] = event.sequence
@@ -196,7 +196,7 @@ def record_adapter(adapter, root: Path) -> dict:
 
 def qualify(records: list[dict], gaps: list[dict]) -> dict:
     definitions = [InstrumentDefinition(**r["payload"]) for r in records if r["kind"] == "instrument"]
-    quotes = [r["payload"] for r in records if r["kind"] == "market"]
+    quotes = [r["payload"] for r in records if r["kind"] == "market" and r["payload"].get("event_type", "quote") == "quote"]
     products = {d.product for d in definitions}
     matching = bool({d.month for d in definitions if d.product == "CL"} & {d.month for d in definitions if d.product == "MCL"})
     return {

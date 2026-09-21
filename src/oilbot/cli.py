@@ -104,7 +104,7 @@ def record(config, component: str, *, once: bool, fixture: Path | None, stop=Non
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Oil observation and offline research; no broker execution")
     sub = parser.add_subparsers(dest="command", required=True)
-    for command in ("preflight", "status", "record", "snapshot", "freeze-protocol", "adjudicate", "demo"):
+    for command in ("preflight", "status", "record", "snapshot", "freeze-protocol", "adjudicate", "cluster", "claim", "ingest-news", "demo"):
         child = sub.add_parser(command)
         child.add_argument("--config", default="configs/observe.yaml")
         if command == "record":
@@ -122,6 +122,41 @@ def main(argv=None):
             child.add_argument("--story", action="append", required=True)
             child.add_argument("--target-incident", required=True)
             child.add_argument("--reason", required=True)
+        if command == "cluster":
+            child.add_argument("--episode", required=True)
+            child.add_argument("--incident", action="append", required=True)
+            child.add_argument("--reason", required=True)
+        if command in {"claim", "ingest-news"}:
+            child.add_argument("--profiles", type=Path, default=Path("configs/source-profiles.json"))
+            child.add_argument("--file", type=Path, required=True)
+        if command == "ingest-news":
+            child.add_argument("--source", required=True)
+    child = sub.add_parser("source-profiles")
+    child.add_argument("--file", type=Path, default=Path("configs/source-profiles.json"))
+    child = sub.add_parser("import-databento")
+    child.add_argument("--file", type=Path, required=True)
+    child.add_argument("--registry", type=Path, required=True)
+    child.add_argument("--schema", choices=("mbp-1", "trades"), default="mbp-1")
+    child.add_argument("--out", type=Path, required=True)
+    child = sub.add_parser("dataset")
+    child.add_argument("--manifest", type=Path, required=True)
+    child.add_argument("--market", type=Path)
+    child.add_argument("--out", type=Path, required=True)
+    child.add_argument("--policy", type=Path, required=True)
+    child.add_argument("--support", type=Path)
+    child = sub.add_parser("event-study")
+    child.add_argument("--dataset", type=Path, required=True)
+    child.add_argument("--validation-start", required=True)
+    child.add_argument("--test-start", required=True)
+    child.add_argument("--out", type=Path, required=True)
+    child = sub.add_parser("fit-support")
+    child.add_argument("--dataset", type=Path, required=True)
+    child.add_argument("--validation-start", required=True)
+    child.add_argument("--test-start", required=True)
+    child.add_argument("--available-at", required=True)
+    child.add_argument("--horizon", type=int, required=True)
+    child.add_argument("--execution-role", choices=("CL1", "MCL1"), default="MCL1")
+    child.add_argument("--out", type=Path, required=True)
     for command in ("replay", "report"):
         child = sub.add_parser(command)
         child.add_argument("--manifest", type=Path, required=True)
@@ -129,7 +164,42 @@ def main(argv=None):
             child.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command in {"replay", "report"}:
+        if args.command == "source-profiles":
+            from .provenance import load_profiles
+            from dataclasses import asdict
+            result = [asdict(p) for p in load_profiles(args.file).values()]
+        elif args.command == "import-databento":
+            from .databento import DatabentoHistoricalAdapter
+            adapter = DatabentoHistoricalAdapter(args.file, args.registry, schema=args.schema)
+            if args.out.exists():
+                raise ValueError("import destination already exists")
+            result = record_adapter(adapter, args.out)
+            atomic_json(args.out / "provenance.json", adapter.provenance())
+        elif args.command == "dataset":
+            from .dataset import build_dataset
+            from .strategy import StrategyRules
+            from .outcomes import OutcomePolicy
+            policy = json.loads(args.policy.read_text())
+            result = build_dataset(args.manifest, args.out, market_root=args.market,
+                rules=StrategyRules(**policy["strategy"]), policy=OutcomePolicy(**policy["execution"]),
+                roll_days=policy["roll_days"], supports=json.loads(args.support.read_text()) if args.support else [])
+        elif args.command in {"fit-support", "event-study"}:
+            from .dataset import read_dataset, fit_support
+            from .study import event_study, partition_episodes
+            metadata, rows = read_dataset(args.dataset)
+            if args.command == "fit-support":
+                from .clock import epoch_ns
+                if epoch_ns(args.available_at) > epoch_ns(args.validation_start):
+                    raise ValueError("support must be available by the validation start")
+                development = partition_episodes(rows, [args.validation_start, args.test_start])["development"]
+                rows = [{**r, "episode_id": r["original_episode_id"]} for r in development]
+            result = (fit_support(rows, available_at=args.available_at, horizon=args.horizon, execution_role=args.execution_role)
+                      if args.command == "fit-support" else event_study(rows, [args.validation_start, args.test_start]))
+            if args.out.exists():
+                raise ValueError("output already exists")
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            atomic_json(args.out, result)
+        elif args.command in {"replay", "report"}:
             manifest, reader, market = load_manifest(args.manifest)
             if args.command == "replay":
                 result = {"verified": True, "records": len(reader.records), "decisions": len(reader.decision_inputs()),
@@ -154,6 +224,36 @@ def main(argv=None):
                 reducer = IncidentReducer(Journal(config.db("news")), Journal(config.db("analysis")), config.raw["assets"])
                 result = {"adjudication_id": reducer.adjudicate(story_ids=args.story, target_incident=args.target_incident,
                                                               operation=args.operation, reason=args.reason)}
+            elif args.command == "cluster":
+                from .clusters import assign_episode
+                result = {"assignment_id": assign_episode(Journal(config.db("analysis")), episode_id=args.episode,
+                          incident_ids=args.incident, reason=args.reason)}
+            elif args.command == "claim":
+                from .provenance import load_profiles, record_claim
+                result = {"claim_id": record_claim(Journal(config.db("news")), Journal(config.db("analysis")),
+                          load_profiles(args.profiles), json.loads(args.file.read_text()))}
+            elif args.command == "ingest-news":
+                from dataclasses import asdict
+                from .provenance import load_profiles, StructuredNewsAdapter
+                from .sources import allowed
+                source = next((s for s in config.sources if s["id"] == args.source), None)
+                if source is None:
+                    raise ValueError("source must be registered in observation config")
+                profile = load_profiles(args.profiles)[args.source]
+                source = {**source, "profile": asdict(profile)}
+                body = args.file.read_bytes()
+                if len(body) > 8 * 1024 * 1024:
+                    raise ValueError("news batch exceeds 8 MiB")
+                news = Journal(config.db("news"))
+                now = stamp()
+                oid = news.capture(source, {"body": body, "url": source["url"], "status": 200,
+                    "content_type": "application/json", "headers": {}, "started": now, "first_byte": now,
+                    "received": now, "delivery": "local_import", "parser": "structured", "source_profile": asdict(profile)})
+                items = StructuredNewsAdapter().parse(body, source["url"], "application/json")
+                if any(not allowed(item.url, source) for item in items):
+                    raise ValueError("news item publisher URL outside registered source hosts")
+                result = {"observation_id": oid, "revision_ids": news.accept_items(source, oid, items,
+                    news.cursor("source:" + source["id"], {}))}
             else:
                 stop = threading.Event()
                 signal.signal(signal.SIGTERM, lambda *_: stop.set())

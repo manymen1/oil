@@ -22,7 +22,10 @@ def distribution(values: list[float]) -> dict:
 def markouts(reader, market: dict) -> list[dict]:
     definitions = {r["payload"]["instrument_id"]: InstrumentDefinition(**r["payload"])
                    for r in market["records"] if r["kind"] == "instrument"}
-    quotes = [MarketEvent(**r["payload"]) for r in market["records"] if r["kind"] == "market"]
+    quotes = [MarketEvent(**r["payload"]) for r in market["records"] if r["kind"] == "market"
+              and r["payload"].get("event_type", "quote") == "quote"]
+    quote_identity = {digest(MarketEvent(**r["payload"]).__dict__): r["id"] for r in market["records"]
+                      if r["kind"] == "market" and r["payload"].get("event_type", "quote") == "quote"}
     by_id = {r["id"]: r for r in reader.records}
     output = []
     for decision in reader.through("9999-01-01T00:00:00Z", "decision"):
@@ -40,7 +43,7 @@ def markouts(reader, market: dict) -> list[dict]:
                 except ValueError:
                     quote = None
                 mids[label] = (Decimal(quote.bid) + Decimal(quote.ask)) / 2 if quote else None
-                quote_ids[label] = digest(["market", quote.__dict__]) if quote else None
+                quote_ids[label] = quote_identity[digest(quote.__dict__)] if quote else None
             def difference(end, start):
                 return str(mids[end] - mids[start]) if mids[end] is not None and mids[start] is not None else None
             output.append({"decision_id": decision["id"], "instrument": definition.instrument_id,

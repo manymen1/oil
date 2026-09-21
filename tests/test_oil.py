@@ -99,6 +99,58 @@ def test_observation_mode_cannot_enable_execution(config):
             load_config(config.path)
 
 
+def test_structured_claim_snapshot_dataset_cli_roundtrip(config, tmp_path, capsys):
+    from oilbot.dataset import read_dataset
+    text = "Ras Tanura loading suspended"
+    envelope = tmp_path / "news.json"
+    envelope.write_text(json.dumps({"items": [{"id": "synthetic-1", "url": "https://www.aramco.com/synthetic-1",
+        "title": "Synthetic test only", "text": text, "author": "fixture", "status": "update"}]}))
+    assert main(["ingest-news", "--config", str(config.path), "--source", "aramco", "--file", str(envelope)]) == 0
+    news = Journal(config.db("news"))
+    story = news.records("story_revision")[0]
+    assert story["payload"]["author"] == "fixture"
+    assert story["payload"]["source_profile"]["source"] == "aramco"
+    annotation = tmp_path / "claim.json"
+    annotation.write_text(json.dumps({"story_revision_id": story["id"], "episode_id": "synthetic-episode",
+        "claim_key": "ras_tanura.operations.synthetic", "event_type": "EXPORT_TERMINAL_CLOSED",
+        "value": "suspended", "polarity": "asserted", "claim_origin": "aramco", "origin_claim_id": None,
+        "basis": "first_party", "authority_scope": "own_operations", "start": 0, "end": len(text),
+        "quote": text, "review_reason": "Synthetic end-to-end test"}))
+    assert main(["claim", "--config", str(config.path), "--file", str(annotation)]) == 0
+    snapshot, dataset = tmp_path / "snapshot", tmp_path / "dataset"
+    assert main(["snapshot", "--config", str(config.path), "--out", str(snapshot)]) == 0
+    assert main(["replay", "--manifest", str(snapshot / "manifest.json")]) == 0
+    assert main(["dataset", "--manifest", str(snapshot / "manifest.json"),
+                 "--policy", "configs/research.json", "--out", str(dataset)]) == 0
+    metadata, rows = read_dataset(dataset)
+    assert rows == [] and metadata["claim_transitions"] == 1
+    claim = json.loads((dataset / "claims.jsonl").read_text())
+    assert claim["confirmation_level"] == "OFFICIAL_CLAIM"  # Catalog profile is not verified.
+    assert claim["action"] == "ABSTAIN" and claim["features"]["CL_price_at_decision"] is None
+    study = tmp_path / "study.json"
+    assert main(["event-study", "--dataset", str(dataset), "--validation-start", "2027-01-01T00:00:00Z",
+                 "--test-start", "2027-04-01T00:00:00Z", "--out", str(study)]) == 0
+    assert not json.loads(study.read_text())["promotion"]
+    (dataset / "claims.jsonl").write_text("{}\n")
+    with pytest.raises(ValueError, match="checksum"):
+        read_dataset(dataset)
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize("url", ["https://www.aramco.com:8443/item", "https://user@www.aramco.com/item"])
+def test_structured_ingestion_enforces_full_registered_url_policy(config, tmp_path, url):
+    envelope = tmp_path / "news.json"
+    envelope.write_text(json.dumps({"items": [{"id": "test", "url": url, "title": "Test", "text": "Test"}]}))
+    assert main(["ingest-news", "--config", str(config.path), "--source", "aramco", "--file", str(envelope)]) == 2
+    news = Journal(config.db("news"))
+    assert news.records("observation") and not news.records("story_revision")
+    NewsCollector(news, config.sources).recover_unparsed()
+    assert not news.records("story_revision")
+    src = {**source(config), "adapter": "structured"}
+    result = NewsCollector(news, [src], lambda *_: response(envelope.read_bytes(), content_type="application/json")).poll_once(force=True)
+    assert result["errors"] == 1 and not news.records("story_revision")
+
+
 def test_boundaries_and_environment(config, monkeypatch):
     monkeypatch.setenv("BROKER_PRIVATE_KEY", "not-for-inference")
     monkeypatch.setenv("OPENAI_API_KEY", "not-for-inference")

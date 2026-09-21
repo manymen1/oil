@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from decimal import Decimal
 from typing import Protocol, Iterable
 
-from .clock import instant
+from .clock import instant, epoch_ns
 
 
 def canonical(value) -> str:
@@ -27,6 +27,10 @@ class NewsItem:
     status: str = "update"
     origin: str | None = None
     links: tuple[str, ...] = ()
+    author: str | None = None
+    original_url: str | None = None
+    reposter: str | None = None
+    media_sha256: str | None = None
 
 
 class NewsSourceAdapter(Protocol):
@@ -74,8 +78,36 @@ class InstrumentDefinition:
         return int(value)
 
 
+@dataclass(frozen=True, kw_only=True)
+class MarketTiming:
+    provider: str = "fixture"
+    contract_month: str | None = None
+    exchange_event_ns: int | None = None
+    provider_receive_ns: int | None = None
+    local_receive_ns: int | None = None
+    availability_basis: str = "fixture"
+    sequence_scope: str = "instrument"
+    source_record_id: str | None = None
+    flags: int = 0
+
+    def validate_timing(self, definition):
+        if type(self.flags) is not int or not 0 <= self.flags <= 255:
+            raise ValueError("invalid market flags")
+        if self.contract_month is not None and self.contract_month != definition.month:
+            raise ValueError("contract month mismatch")
+        for value in (self.exchange_event_ns, self.provider_receive_ns, self.local_receive_ns):
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError("invalid nanosecond timestamp")
+        basis = {"fixture": None, "local_receive": self.local_receive_ns,
+                 "provider_receive_proxy": self.provider_receive_ns}
+        if self.availability_basis not in basis:
+            raise ValueError("unknown availability basis")
+        if self.availability_basis != "fixture" and basis[self.availability_basis] != epoch_ns(self.available_at):
+            raise ValueError("availability timestamp does not match declared basis")
+
+
 @dataclass(frozen=True)
-class MarketEvent:
+class QuoteEvent(MarketTiming):
     instrument_id: str
     available_at: str
     bid: str | None
@@ -89,16 +121,21 @@ class MarketEvent:
     subscription: str
     source_at: str | None = None
     event_type: str = "quote"
+    bid_count: int | None = None
+    ask_count: int | None = None
 
     def validate(self, definition: InstrumentDefinition) -> None:
         definition.validate()
+        self.validate_timing(definition)
+        if self.event_type != "quote":
+            raise ValueError("QuoteEvent cannot represent a trade or status")
         if self.instrument_id != definition.instrument_id:
             raise ValueError("instrument mismatch")
         for at in (self.available_at, self.bid_at, self.ask_at):
             instant(at)
-        if instant(definition.available_at) > instant(self.available_at):
+        if epoch_ns(definition.available_at) > epoch_ns(self.available_at):
             raise ValueError("future instrument definition")
-        if max(instant(self.bid_at), instant(self.ask_at)) > instant(self.available_at):
+        if max(epoch_ns(self.bid_at), epoch_ns(self.ask_at)) > epoch_ns(self.available_at):
             raise ValueError("future quote component")
         if self.bid is not None:
             definition.ticks(self.bid)
@@ -108,13 +145,79 @@ class MarketEvent:
             raise ValueError("crossed book")
         if any(type(v) is not int or v < 0 for v in (self.bid_size, self.ask_size, self.sequence)):
             raise ValueError("invalid size/sequence")
-        if self.data_mode not in {"fixture", "realtime", "delayed", "snapshot", "aggregated"}:
+        if any(v is not None and (type(v) is not int or v < 0) for v in (self.bid_count, self.ask_count)):
+            raise ValueError("invalid order count")
+        if self.data_mode not in {"fixture", "realtime", "historical", "delayed", "snapshot", "aggregated"}:
             raise ValueError("unknown market data mode")
+
+
+# Existing fixture/research callers continue to mean quote; new trades are explicit.
+MarketEvent = QuoteEvent
+
+
+@dataclass(frozen=True)
+class TradeEvent(MarketTiming):
+    instrument_id: str
+    available_at: str
+    trade_price: str
+    trade_size: int
+    aggressor: str
+    sequence: int
+    data_mode: str
+    subscription: str
+    event_type: str = "trade"
+
+    def validate(self, definition):
+        definition.validate()
+        self.validate_timing(definition)
+        if self.instrument_id != definition.instrument_id or self.event_type != "trade":
+            raise ValueError("trade instrument/type mismatch")
+        if epoch_ns(definition.available_at) > epoch_ns(self.available_at):
+            raise ValueError("future instrument definition")
+        if not isinstance(self.trade_price, str):
+            raise ValueError("trade price required")
+        definition.ticks(self.trade_price)
+        if type(self.trade_size) is not int or self.trade_size <= 0:
+            raise ValueError("invalid trade size")
+        if type(self.sequence) is not int or self.sequence < 0 or self.aggressor not in {"buy", "sell", "unknown"}:
+            raise ValueError("invalid trade sequence/aggressor")
+        if self.data_mode not in {"fixture", "historical", "realtime", "delayed"}:
+            raise ValueError("unknown trade data mode")
+
+
+@dataclass(frozen=True)
+class MarketStatusEvent(MarketTiming):
+    instrument_id: str
+    available_at: str
+    status: str
+    reason: str
+    sequence: int
+    data_mode: str
+    subscription: str
+    event_type: str = "status"
+
+    def validate(self, definition):
+        definition.validate()
+        self.validate_timing(definition)
+        if self.event_type != "status" or self.instrument_id != definition.instrument_id or self.status not in {"GAP", "HALTED", "RESET", "RESUMED"}:
+            raise ValueError("invalid market status")
+        if type(self.sequence) is not int or self.sequence < 0 or self.data_mode not in {"fixture", "historical", "realtime", "delayed"}:
+            raise ValueError("invalid status sequence/data mode")
+        if epoch_ns(definition.available_at) > epoch_ns(self.available_at):
+            raise ValueError("future instrument definition")
+
+
+def market_event(payload: dict):
+    types = {"quote": QuoteEvent, "trade": TradeEvent, "status": MarketStatusEvent}
+    kind = payload.get("event_type", "quote")
+    if kind not in types:
+        raise ValueError("unknown market event type")
+    return types[kind](**payload)
 
 
 class MarketDataAdapter(Protocol):
     def definitions(self) -> Iterable[InstrumentDefinition]: ...
-    def events(self) -> Iterable[MarketEvent]: ...
+    def events(self) -> Iterable[QuoteEvent | TradeEvent | MarketStatusEvent]: ...
 
 
 FACT_FIELDS = {

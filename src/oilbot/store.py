@@ -167,6 +167,7 @@ class Journal:
                     continue
                 rid = digest([story, content, previous["revision_id"] if previous else None])
                 payload = {**to_dict(item), "source_id": source["id"], "source_role": source["role"],
+                           "source_profile": source.get("profile"),
                            "story_id": story, "content_hash": content,
                            "revision": previous["revision"] + 1 if previous else 1,
                            "supersedes_id": previous["revision_id"] if previous else None,
