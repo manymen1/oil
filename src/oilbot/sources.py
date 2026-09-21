@@ -16,7 +16,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from .clock import instant, stamp, utc_now
-from .schema import NewsItem
+from .schema import NewsItem, digest
 from .store import Journal
 
 
@@ -257,7 +257,8 @@ class NewsCollector:
                 state = "RECOVERED_UNPARSED_RESPONSE"
             except (ValueError, subprocess.SubprocessError) as exc:
                 state = "PARSE_RECOVERY_FAILED:" + type(exc).__name__
-            self.store.append("source_health", {"source_id": source["id"], "status": state, "input_revision_ids": [row["id"]]})
+            self.store.append("source_health", {"source_id": source["id"], "status": state, "scope": "recovery",
+                                               "source_policy": payload.get("source_policy"), "input_revision_ids": [row["id"]]})
 
     @staticmethod
     def pdf_item(body: bytes, url: str) -> NewsItem:
@@ -275,7 +276,7 @@ class NewsCollector:
         observation_id = None
         health = "NETWORK_FAILURE"
         try:
-            response = self.fetcher(source, source["url"], cursor)
+            response = {**self.fetcher(source, source["url"], cursor), "requested_url": source["url"]}
             observation_id = self.store.capture(source, response)
             result["responses"] += 1
             status = response["status"]
@@ -313,9 +314,10 @@ class NewsCollector:
             with self.store.transaction() as db:
                 self.store.set_cursor(db, "source:" + source["id"], {**cursor, "failures": failures,
                     "next_poll": (instant(utc_now()) + timedelta(seconds=delay)).isoformat()})
-        if result["errors"] and health == "OK":
+        if result["errors"] and health in {"OK", "EMPTY", "UNCHANGED"}:
             health = "OK_DETAIL_INCOMPLETE"
         self.store.append("source_health", {"source_id": source["id"], "status": health,
+                                           "scope": "collection", "source_policy": digest(source),
                                            "input_revision_ids": [observation_id] if observation_id else []})
         return result
 
@@ -331,10 +333,11 @@ class NewsCollector:
             detail_cursor = self.store.cursor(detail_key, {})
             oid = None
             try:
-                response = self.fetcher(source, url, detail_cursor)
+                response = {**self.fetcher(source, url, detail_cursor), "requested_url": url}
                 oid = self.store.capture(source, response)
                 result["responses"] += 1
                 if response["status"] == 304:
+                    self.store.accept_items(source, oid, [], self.store.cursor("source:" + source["id"], {}))
                     continue
                 if response["status"] != 200:
                     raise ParseFailure("DETAIL_HTTP_" + str(response["status"]))
@@ -355,7 +358,7 @@ class NewsCollector:
                                                 self.store.cursor("source:" + source["id"], {})))
             except (requests.RequestException, ValueError, subprocess.SubprocessError) as exc:
                 result["errors"] += 1
-                self.store.append("source_health", {"source_id": source["id"], "status": "DETAIL_FAILED",
+                self.store.append("source_health", {"source_id": source["id"], "status": "DETAIL_FAILED", "scope": "detail",
                                                     "reason": str(exc) if isinstance(exc, ParseFailure) else type(exc).__name__, "url": url,
                                                     "input_revision_ids": [oid] if oid else []})
         with self.store.transaction() as db:

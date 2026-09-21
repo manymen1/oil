@@ -4,6 +4,7 @@ import argparse
 import json
 import shutil
 import signal
+import sqlite3
 import threading
 from pathlib import Path
 
@@ -133,6 +134,17 @@ def main(argv=None):
             child.add_argument("--source", required=True)
     child = sub.add_parser("source-profiles")
     child.add_argument("--file", type=Path, default=Path("configs/source-profiles.json"))
+    for command in ("qualify-sources", "collection-health"):
+        child = sub.add_parser(command, help="Read-only source evidence report; no network calls")
+        child.add_argument("--config", default="configs/observe.yaml")
+        child.add_argument("--out", type=Path)
+        if command == "qualify-sources":
+            child.add_argument("--profiles", type=Path, default=Path("configs/source-profiles.json"))
+            child.add_argument("--reviews", type=Path, default=Path("configs/source-qualification.json"))
+            child.add_argument("--source", action="append")
+            child.add_argument("--evidence-max-age-seconds", type=int, default=86400)
+        else:
+            child.add_argument("--window-seconds", type=int, default=86400)
     child = sub.add_parser("import-databento")
     child.add_argument("--file", type=Path, required=True)
     child.add_argument("--registry", type=Path, required=True)
@@ -164,7 +176,22 @@ def main(argv=None):
             child.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command == "source-profiles":
+        if args.command in {"qualify-sources", "collection-health"}:
+            from .source_quality import collection_health, qualify_sources, load_qualification
+            from .provenance import load_profiles
+            config = load_config(args.config)
+            if args.command == "qualify-sources":
+                candidates, reviews = load_qualification(args.reviews)
+                result = qualify_sources(config, load_profiles(args.profiles), candidates, reviews,
+                    source_ids=args.source, evidence_max_age_seconds=args.evidence_max_age_seconds)
+            else:
+                result = collection_health(config, window_seconds=args.window_seconds)
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                with args.out.open("x") as stream:
+                    json.dump(result, stream, indent=2, ensure_ascii=False)
+                    stream.write("\n")
+        elif args.command == "source-profiles":
             from .provenance import load_profiles
             from dataclasses import asdict
             result = [asdict(p) for p in load_profiles(args.file).values()]
@@ -261,6 +288,6 @@ def main(argv=None):
                 result = record(config, args.component, once=args.once, fixture=args.fixture, stop=stop)
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0
-    except (ValueError, RuntimeError, OSError, KeyError) as exc:
+    except (ValueError, RuntimeError, OSError, KeyError, sqlite3.Error) as exc:
         print(json.dumps({"error": str(exc), "mode": "observe"}))
         return 2

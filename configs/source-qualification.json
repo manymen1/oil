@@ -1,0 +1,6 @@
+{
+  "schema": "source-qualification-v1",
+  "note": "Eight candidates for qualification, not activation. No reviewed rights or identities are asserted. Existing observation configuration is unchanged.",
+  "candidates": ["aramco", "adnoc", "fujairah", "ukmto", "gcaptain", "irna", "al_arabiya", "iran_international"],
+  "reviews": []
+}

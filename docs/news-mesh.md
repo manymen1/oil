@@ -8,6 +8,10 @@ delivery permissions, paid access, identity verification and independence must
 be qualified before activation. The existing observation sources remain in
 `configs/observe.yaml`. No subscription is purchased or assumed.
 
+Use `oilbot qualify-sources` and `oilbot collection-health` for read-only evidence
+reports. The [qualification guide](source-qualification.md) covers the proposed
+eight-source shortlist, review requirements, and collection-health semantics.
+
 ```bash
 oilbot source-profiles
 ```

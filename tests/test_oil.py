@@ -151,6 +151,52 @@ def test_structured_ingestion_enforces_full_registered_url_policy(config, tmp_pa
     assert result["errors"] == 1 and not news.records("story_revision")
 
 
+@pytest.mark.parametrize("first_status", [200, 304, 403])
+def test_first_real_content_remains_backfill_after_empty_or_failed_poll(config, journals, first_status):
+    news, _ = journals
+    src = source(config)
+    collector = NewsCollector(news, [src], lambda *_: response(b"<rss><channel/></rss>", status=first_status))
+    collector.poll_once(force=True)
+    initial = story(news, src)
+    assert initial["payload"]["initial_snapshot"]
+    changed = story(news, src, "Ras Tanura loading restored")
+    assert not changed["payload"]["initial_snapshot"]
+
+
+def test_collection_health_tracks_actual_collector_failures(config, journals):
+    import requests
+    from oilbot.source_quality import collection_health
+    news, _ = journals
+    src = config.sources[0]
+    feed = b'<rss><channel><item><guid>one</guid><title>Test</title><link>https://www.aramco.com/test</link></item></channel></rss>'
+    NewsCollector(news, [src], lambda *_: response(feed)).poll_once(force=True)
+    row = collection_health(config)["sources"][0]
+    assert row["state"] == "HEALTHY"
+    assert news.records("observation")[0]["payload"]["requested_url"] == src["url"]
+    def offline(*_):
+        raise requests.ConnectionError("synthetic failure")
+    NewsCollector(news, [src], offline).poll_once(force=True)
+    row = collection_health(config)["sources"][0]
+    assert row["state"] == "FAILING" and row["backoff_active"]
+    assert row["last_health_status"] == "ConnectionError"
+
+
+def test_detail_failure_after_304_is_degraded_not_healthy(config, journals):
+    from oilbot.source_quality import collection_health
+    news, _ = journals
+    src = config.sources[1]
+    detail = "https://www.adnoc.ae/en/news-and-media/press-releases/2026/test"
+    with news.transaction() as db:
+        news.set_cursor(db, "details:" + src["id"], {"links": [detail], "offset": 0})
+    def fetch(_, url, cursor):
+        return response(b"", status=304 if url == src["url"] else 503, url=url)
+    result = NewsCollector(news, [src], fetch).poll_once(force=True)
+    assert result["errors"] == 1
+    row = next(r for r in collection_health(config)["sources"] if r["source"] == src["id"])
+    assert row["state"] == "DEGRADED"
+    assert row["last_health_status"] == "OK_DETAIL_INCOMPLETE"
+
+
 def test_boundaries_and_environment(config, monkeypatch):
     monkeypatch.setenv("BROKER_PRIVATE_KEY", "not-for-inference")
     monkeypatch.setenv("OPENAI_API_KEY", "not-for-inference")

@@ -20,6 +20,18 @@ oilbot record --component analysis --once
 oilbot status
 ```
 
+## Source qualification and collection health
+
+```bash
+oilbot qualify-sources
+oilbot collection-health
+```
+
+These read-only reports do not fetch or activate feeds. The proposed eight-source
+shortlist is separate from enabled observation sources. See the
+[qualification guide](docs/source-qualification.md) for evidence requirements,
+permission reviews, and stale/backoff/parser reporting.
+
 ## Offline demo
 
 ```bash

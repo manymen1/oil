@@ -155,7 +155,11 @@ class Journal:
         at = utc_now()
         output = []
         with self.transaction() as db:
-            initial_snapshot = db.execute("SELECT 1 FROM cursors WHERE key=?", ("source:" + source["id"],)).fetchone() is None
+            # Scheduling/HTTP validators can exist after an error, empty feed or
+            # 304. Only a previously captured story establishes a content baseline.
+            initial_snapshot = db.execute(
+                "SELECT 1 FROM records WHERE kind='story_revision' AND json_extract(payload,'$.source_id')=? LIMIT 1",
+                (source["id"],)).fetchone() is None
             for item in items:
                 story = digest([source["id"], item.native_id])
                 content = digest(to_dict(item))
