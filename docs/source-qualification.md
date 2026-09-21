@@ -48,8 +48,10 @@ and rights. Changing the registration/profile requires a new review and matching
 collection evidence. Reviewed evidence does not automatically update profiles
 or authorize first-party confirmation in the claim engine.
 
-The `reviews` array starts empty. Use report-provided hashes when adding a
-review. Replace the following placeholders with actual reviewed evidence:
+The `reviews` array contains partial findings from the
+[21 September screening](source-review-2026-09-21.md), not completed approvals.
+Use report-provided hashes when adding or renewing a review. Replace the
+following placeholders with actual reviewed evidence:
 
 ```json
 {

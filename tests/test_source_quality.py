@@ -230,3 +230,28 @@ def test_cli_reports_are_offline_and_refuse_overwrite(config, tmp_path, capsys, 
     assert main(["qualify-sources", "--config", str(config.path), "--source", "irna"]) == 0
     assert not config.root.exists()
     capsys.readouterr()
+
+
+def test_shipped_screening_is_bound_but_cannot_activate_collection(tmp_path):
+    config = replace(load_config("configs/observe.yaml"), root=tmp_path / "uncaptured")
+    profiles = load_profiles("configs/source-profiles.json")
+    candidates, reviews = load_qualification("configs/source-qualification.json")
+    registered = {s["id"]: s for s in config.sources}
+    assert set(reviews) == set(candidates)
+    for sid, review in reviews.items():
+        assert review["profile_hash"] == digest(asdict(profiles[sid]))
+        assert review["source_policy_hash"] == (digest(registered[sid]) if sid in registered else None)
+        assert review["checks"]["model_processing"]["status"] == "pending"
+    report = qualify_sources(config, profiles, candidates, reviews, now="2026-09-21T10:00:00Z")
+    assert report["summary"] == {"BLOCKED": 8}
+    assert not any(s["capture_checks_passed"] or s["model_checks_passed"] for s in report["sources"])
+    assert not config.root.exists()
+
+
+def test_diagnostic_metadata_is_not_replay_or_capture_evidence():
+    value = json.loads(Path("docs/source-checks/2026-09-21.json").read_text())
+    assert not value["raw_bodies_retained"] and not value["news_journal_written"]
+    assert not value["source_flags_changed"] and not value["continuous_collection_started"]
+    candidates, _ = load_qualification("configs/source-qualification.json")
+    assert {c["source"] for c in value["checks"]} == set(candidates)
+    assert all("body" not in c and "body_b64" not in c for c in value["checks"])

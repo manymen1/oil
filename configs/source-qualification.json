@@ -1,6 +1,288 @@
 {
   "schema": "source-qualification-v1",
-  "note": "Eight candidates for qualification, not activation. No reviewed rights or identities are asserted. Existing observation configuration is unchanged.",
-  "candidates": ["aramco", "adnoc", "fujairah", "ukmto", "gcaptain", "irna", "al_arabiya", "iran_international"],
-  "reviews": []
+  "note": "Preliminary primary-source screening, not legal clearance or activation. Seven identities screened; permissions scoped or pending. Null source hashes mean catalog-only candidates are unregistered. Expiry is an operational refresh deadline, not licence expiry.",
+  "candidates": [
+    "aramco",
+    "adnoc",
+    "fujairah",
+    "ukmto",
+    "gcaptain",
+    "irna",
+    "al_arabiya",
+    "iran_international"
+  ],
+  "reviews": [
+    {
+      "source": "aramco",
+      "source_policy_hash": "e79642fd91137e6c3820665935b52575ea3b6606eab4b474e5073086c004abd7",
+      "profile_hash": "1341550bc42cc63a39b80f155ab8e785106b1f8af24bc5b2383b3995c59c33c6",
+      "reviewed_at": "2026-09-21T09:49:55.159981+00:00",
+      "expires_at": "2026-09-28T09:49:55.159981+00:00",
+      "reviewer": "codex-primary-source-screening-not-legal-clearance",
+      "checks": {
+        "identity": {
+          "status": "verified",
+          "evidence": "https://www.aramco.com/en/terms-and-conditions ; domain/publisher identity only, not truth or independence. See docs/source-review-2026-09-21.md#aramco."
+        },
+        "capture": {
+          "status": "pending",
+          "evidence": "Use scope not cleared for automated trading research. See docs/source-review-2026-09-21.md#aramco and https://www.aramco.com/en/terms-and-conditions."
+        },
+        "model_processing": {
+          "status": "pending",
+          "evidence": "No model-use activation. Verify content scope, third-party exclusions and provider retention before enabling."
+        },
+        "timestamps": {
+          "status": "pending",
+          "evidence": "One-off metadata checks do not validate publication/update semantics: docs/source-checks/2026-09-21.json."
+        },
+        "revisions": {
+          "status": "pending",
+          "evidence": "Correction, deletion and repeated-poll coverage not established."
+        },
+        "attribution": {
+          "status": "pending",
+          "evidence": "Domain identity is not original claim attribution; source-specific syndication review remains required."
+        }
+      }
+    },
+    {
+      "source": "adnoc",
+      "source_policy_hash": "5e5f95deeabb6e918ca6c793e3254589ba155edb882213503e1bffce942d0828",
+      "profile_hash": "3ad29ae15cf9a78188de8373c621d44c2f922f89968093a4514ea43c689cfb39",
+      "reviewed_at": "2026-09-21T09:49:55.159981+00:00",
+      "expires_at": "2026-09-28T09:49:55.159981+00:00",
+      "reviewer": "codex-primary-source-screening-not-legal-clearance",
+      "checks": {
+        "identity": {
+          "status": "verified",
+          "evidence": "https://adnoc.ae/en/terms-and-conditions ; domain/publisher identity only, not truth or independence. See docs/source-review-2026-09-21.md#adnoc."
+        },
+        "capture": {
+          "status": "pending",
+          "evidence": "Use scope not cleared for automated trading research. See docs/source-review-2026-09-21.md#adnoc and https://adnoc.ae/en/terms-and-conditions."
+        },
+        "model_processing": {
+          "status": "pending",
+          "evidence": "No model-use activation. Verify content scope, third-party exclusions and provider retention before enabling."
+        },
+        "timestamps": {
+          "status": "pending",
+          "evidence": "One-off metadata checks do not validate publication/update semantics: docs/source-checks/2026-09-21.json."
+        },
+        "revisions": {
+          "status": "pending",
+          "evidence": "Correction, deletion and repeated-poll coverage not established."
+        },
+        "attribution": {
+          "status": "pending",
+          "evidence": "Domain identity is not original claim attribution; source-specific syndication review remains required."
+        }
+      }
+    },
+    {
+      "source": "fujairah",
+      "source_policy_hash": "7579e4072245a2b7b323917c99b2884ed6e4b2407ad5737e00a8592ff497f9eb",
+      "profile_hash": "7c6e42ec62fbd6d97e1e84716327c66883f14561a2984fcbdbe339964067010a",
+      "reviewed_at": "2026-09-21T09:49:55.159981+00:00",
+      "expires_at": "2026-09-28T09:49:55.159981+00:00",
+      "reviewer": "codex-primary-source-screening-not-legal-clearance",
+      "checks": {
+        "identity": {
+          "status": "verified",
+          "evidence": "https://fujairahport.ae/home/ ; domain/publisher identity only, not truth or independence. See docs/source-review-2026-09-21.md#fujairah."
+        },
+        "capture": {
+          "status": "pending",
+          "evidence": "Use scope not cleared for automated trading research. See docs/source-review-2026-09-21.md#fujairah and https://fujairahport.ae/home/."
+        },
+        "model_processing": {
+          "status": "pending",
+          "evidence": "No model-use activation. Verify content scope, third-party exclusions and provider retention before enabling."
+        },
+        "timestamps": {
+          "status": "pending",
+          "evidence": "One-off metadata checks do not validate publication/update semantics: docs/source-checks/2026-09-21.json."
+        },
+        "revisions": {
+          "status": "pending",
+          "evidence": "Correction, deletion and repeated-poll coverage not established."
+        },
+        "attribution": {
+          "status": "pending",
+          "evidence": "Domain identity is not original claim attribution; source-specific syndication review remains required."
+        }
+      }
+    },
+    {
+      "source": "ukmto",
+      "source_policy_hash": "66f57fd0f43463b05acb2a9d2eeb44f17db2d0a2859164bce1cd9186bd4d4f16",
+      "profile_hash": "b1bcb48bb8f65a167cf76b2c412705b13e3bf2cbd8b80462c5aab7b4797bab52",
+      "reviewed_at": "2026-09-21T09:49:55.159981+00:00",
+      "expires_at": "2026-09-28T09:49:55.159981+00:00",
+      "reviewer": "codex-primary-source-screening-not-legal-clearance",
+      "checks": {
+        "identity": {
+          "status": "verified",
+          "evidence": "https://www.ukmto.org/terms-and-conditions ; domain/publisher identity only, not truth or independence. See docs/source-review-2026-09-21.md#ukmto."
+        },
+        "capture": {
+          "status": "permitted",
+          "evidence": "https://www.ukmto.org/terms-and-conditions clause 20 and https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/ ; published UKMTO-owned information only, with attribution and licence exclusions. Does not include personal data, logos or unlicensed third-party material. Runtime access remains blocked."
+        },
+        "model_processing": {
+          "status": "pending",
+          "evidence": "No model-use activation. Verify content scope, third-party exclusions and provider retention before enabling."
+        },
+        "timestamps": {
+          "status": "pending",
+          "evidence": "One-off metadata checks do not validate publication/update semantics: docs/source-checks/2026-09-21.json."
+        },
+        "revisions": {
+          "status": "pending",
+          "evidence": "Correction, deletion and repeated-poll coverage not established."
+        },
+        "attribution": {
+          "status": "pending",
+          "evidence": "Domain identity is not original claim attribution; source-specific syndication review remains required."
+        }
+      }
+    },
+    {
+      "source": "gcaptain",
+      "source_policy_hash": "b3ab2aef4f64707d1b8726bfdfe713b41bd7e2f44b0ad0f268d02c6695de3f26",
+      "profile_hash": "41972f2209481ba06994375870f8a0b0472147ca01f9b29e1f59c5292907f247",
+      "reviewed_at": "2026-09-21T09:49:55.159981+00:00",
+      "expires_at": "2026-09-28T09:49:55.159981+00:00",
+      "reviewer": "codex-primary-source-screening-not-legal-clearance",
+      "checks": {
+        "identity": {
+          "status": "verified",
+          "evidence": "https://gcaptain.com/about/privacy-policy/ ; domain/publisher identity only, not truth or independence. See docs/source-review-2026-09-21.md#gcaptain."
+        },
+        "capture": {
+          "status": "pending",
+          "evidence": "Use scope not cleared for automated trading research. See docs/source-review-2026-09-21.md#gcaptain and https://gcaptain.com/about/privacy-policy/."
+        },
+        "model_processing": {
+          "status": "pending",
+          "evidence": "No model-use activation. Verify content scope, third-party exclusions and provider retention before enabling."
+        },
+        "timestamps": {
+          "status": "pending",
+          "evidence": "One-off metadata checks do not validate publication/update semantics: docs/source-checks/2026-09-21.json."
+        },
+        "revisions": {
+          "status": "pending",
+          "evidence": "Correction, deletion and repeated-poll coverage not established."
+        },
+        "attribution": {
+          "status": "pending",
+          "evidence": "Domain identity is not original claim attribution; source-specific syndication review remains required."
+        }
+      }
+    },
+    {
+      "source": "irna",
+      "source_policy_hash": null,
+      "profile_hash": "fba5f57304d724e5be8b6b5e6aeb55a35e2f972cb0e53e41d347dc6d98d3c9b3",
+      "reviewed_at": "2026-09-21T09:49:55.159981+00:00",
+      "expires_at": "2026-09-28T09:49:55.159981+00:00",
+      "reviewer": "codex-primary-source-screening-not-legal-clearance",
+      "checks": {
+        "identity": {
+          "status": "verified",
+          "evidence": "https://en.irna.ir/news/85965303/About-Us ; domain/publisher identity only, not truth or independence. See docs/source-review-2026-09-21.md#irna."
+        },
+        "capture": {
+          "status": "pending",
+          "evidence": "Use scope not cleared for automated trading research. See docs/source-review-2026-09-21.md#irna and https://en.irna.ir/news/85965303/About-Us."
+        },
+        "model_processing": {
+          "status": "pending",
+          "evidence": "No model-use activation. Verify content scope, third-party exclusions and provider retention before enabling."
+        },
+        "timestamps": {
+          "status": "pending",
+          "evidence": "One-off metadata checks do not validate publication/update semantics: docs/source-checks/2026-09-21.json."
+        },
+        "revisions": {
+          "status": "pending",
+          "evidence": "Correction, deletion and repeated-poll coverage not established."
+        },
+        "attribution": {
+          "status": "pending",
+          "evidence": "Domain identity is not original claim attribution; source-specific syndication review remains required."
+        }
+      }
+    },
+    {
+      "source": "al_arabiya",
+      "source_policy_hash": null,
+      "profile_hash": "28f709d15711621a6044ca4fb8fc966f1ead5a3c026ad666fe42bcc084e68719",
+      "reviewed_at": "2026-09-21T09:49:55.159981+00:00",
+      "expires_at": "2026-09-28T09:49:55.159981+00:00",
+      "reviewer": "codex-primary-source-screening-not-legal-clearance",
+      "checks": {
+        "identity": {
+          "status": "pending",
+          "evidence": "https://english.alarabiya.net/ ; domain/publisher identity only, not truth or independence. See docs/source-review-2026-09-21.md#al_arabiya."
+        },
+        "capture": {
+          "status": "pending",
+          "evidence": "Use scope not cleared for automated trading research. See docs/source-review-2026-09-21.md#al_arabiya and https://english.alarabiya.net/."
+        },
+        "model_processing": {
+          "status": "pending",
+          "evidence": "No model-use activation. Verify content scope, third-party exclusions and provider retention before enabling."
+        },
+        "timestamps": {
+          "status": "pending",
+          "evidence": "One-off metadata checks do not validate publication/update semantics: docs/source-checks/2026-09-21.json."
+        },
+        "revisions": {
+          "status": "pending",
+          "evidence": "Correction, deletion and repeated-poll coverage not established."
+        },
+        "attribution": {
+          "status": "pending",
+          "evidence": "Domain identity is not original claim attribution; source-specific syndication review remains required."
+        }
+      }
+    },
+    {
+      "source": "iran_international",
+      "source_policy_hash": null,
+      "profile_hash": "22fd0dfae9b8f4a17f3895cbf9df39c915fc1baeab496d32a385ba6c2e29d549",
+      "reviewed_at": "2026-09-21T09:49:55.159981+00:00",
+      "expires_at": "2026-09-28T09:49:55.159981+00:00",
+      "reviewer": "codex-primary-source-screening-not-legal-clearance",
+      "checks": {
+        "identity": {
+          "status": "verified",
+          "evidence": "https://www.iranintl.com/en/abouten ; domain/publisher identity only, not truth or independence. See docs/source-review-2026-09-21.md#iran_international."
+        },
+        "capture": {
+          "status": "pending",
+          "evidence": "Use scope not cleared for automated trading research. See docs/source-review-2026-09-21.md#iran_international and https://www.iranintl.com/en/abouten."
+        },
+        "model_processing": {
+          "status": "pending",
+          "evidence": "No model-use activation. Verify content scope, third-party exclusions and provider retention before enabling."
+        },
+        "timestamps": {
+          "status": "pending",
+          "evidence": "One-off metadata checks do not validate publication/update semantics: docs/source-checks/2026-09-21.json."
+        },
+        "revisions": {
+          "status": "pending",
+          "evidence": "Correction, deletion and repeated-poll coverage not established."
+        },
+        "attribution": {
+          "status": "pending",
+          "evidence": "Domain identity is not original claim attribution; source-specific syndication review remains required."
+        }
+      }
+    }
+  ]
 }
