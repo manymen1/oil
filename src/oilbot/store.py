@@ -38,6 +38,17 @@ class Journal:
                     recorded_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS record_kind ON records(kind,seq);
+                CREATE INDEX IF NOT EXISTS story_source ON records(json_extract(payload,'$.source_id'))
+                    WHERE kind='story_revision';
+                CREATE TABLE IF NOT EXISTS parse_work (
+                    observation_id TEXT PRIMARY KEY,
+                    source_id TEXT NOT NULL,
+                    observation_seq INTEGER NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN ('pending','parsed','failed')),
+                    reason TEXT
+                );
+                CREATE INDEX IF NOT EXISTS parse_work_pending ON parse_work(source_id,observation_seq)
+                    WHERE state='pending';
                 CREATE TABLE IF NOT EXISTS cursors (key TEXT PRIMARY KEY, value TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS budget (day TEXT PRIMARY KEY, attempts INTEGER NOT NULL);
                 CREATE TRIGGER IF NOT EXISTS immutable_update BEFORE UPDATE ON records
@@ -91,7 +102,71 @@ class Journal:
             return rid
         db.execute("INSERT INTO records(id,kind,available_at,payload,recorded_at) VALUES(?,?,?,?,?)",
                    (rid, kind, at, body, utc_now()))
+        if kind == "observation":
+            seq = db.execute("SELECT seq FROM records WHERE id=?", (rid,)).fetchone()[0]
+            db.execute("INSERT OR IGNORE INTO parse_work VALUES(?,?,?,'pending',NULL)",
+                       (rid, payload["source_id"], seq))
+        elif kind == "parse_receipt":
+            for ref in payload.get("input_revision_ids", []):
+                db.execute("UPDATE parse_work SET state='parsed',reason=NULL WHERE observation_id=?", (ref,))
         return rid
+
+    def index_legacy_parse_work(self, limit=500) -> dict:
+        """Bounded one-time migration, reading metadata rather than raw bodies.
+
+        The fence prevents recovery from reprocessing an old observation before
+        its later parse receipt has been indexed. New writes maintain the queue
+        transactionally; after migration, this only reads one cursor.
+        """
+        with self.transaction() as db:
+            old = db.execute("SELECT value FROM cursors WHERE key='recovery:index'").fetchone()
+            progress = json.loads(old[0]) if old else {
+                "seq": 0, "through": db.execute("SELECT COALESCE(MAX(seq),0) FROM records").fetchone()[0]}
+            if progress["seq"] >= progress["through"]:
+                self.set_cursor(db, "recovery:index", progress)
+                return {**progress, "complete": True, "scanned": 0}
+            rows = db.execute("""SELECT seq,id,kind,
+                json_extract(payload,'$.source_id') AS source_id,
+                json_extract(payload,'$.input_revision_ids') AS refs,
+                json_extract(payload,'$.status') AS status
+                FROM records WHERE seq>? AND seq<=? ORDER BY seq LIMIT ?""",
+                (progress["seq"], progress["through"], limit)).fetchall()
+            for row in rows:
+                if row["kind"] == "observation":
+                    db.execute("INSERT OR IGNORE INTO parse_work VALUES(?,?,?,'pending',NULL)",
+                               (row["id"], row["source_id"], row["seq"]))
+                elif row["kind"] == "parse_receipt":
+                    for rid in json.loads(row["refs"] or "[]"):
+                        db.execute("UPDATE parse_work SET state='parsed',reason=NULL WHERE observation_id=?", (rid,))
+                elif row["kind"] == "source_health" and row["status"] not in {
+                        "OK", "EMPTY", "UNCHANGED", "OK_DETAIL_INCOMPLETE", "RECOVERED_UNPARSED_RESPONSE"}:
+                    for rid in json.loads(row["refs"] or "[]"):
+                        db.execute("UPDATE parse_work SET state='failed',reason=? WHERE observation_id=? AND state='pending'",
+                                   (row["status"], rid))
+            progress["seq"] = rows[-1]["seq"] if rows else progress["through"]
+            self.set_cursor(db, "recovery:index", progress)
+            return {**progress, "complete": progress["seq"] >= progress["through"], "scanned": len(rows)}
+
+    def pending_parse_work(self, source_ids, *, limit=8, migration=None):
+        migration = migration or self.index_legacy_parse_work()
+        if not source_ids:
+            return []
+        # One indexed seek per source avoids sorting/scanning a global queue.
+        rows = []
+        with self.connect() as db:
+            for sid in source_ids:
+                rows.extend(dict(r) for r in db.execute("""SELECT observation_id,observation_seq FROM parse_work
+                    WHERE state='pending' AND source_id=? AND observation_seq>?
+                    ORDER BY observation_seq LIMIT ?""",
+                    (sid, 0 if migration["complete"] else migration["through"], limit)))
+        return sorted(rows, key=lambda r: r["observation_seq"])[:limit]
+
+    def fail_parse_work(self, observation_id, reason, *, health=None):
+        with self.transaction() as db:
+            if health is not None:
+                self.append("source_health", health, db=db)
+            db.execute("UPDATE parse_work SET state='failed',reason=? WHERE observation_id=? AND state='pending'",
+                       (reason, observation_id))
 
     def records(self, kind: str | None = None, *, through: str | None = None) -> list[dict]:
         conditions, args = [], []

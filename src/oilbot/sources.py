@@ -243,21 +243,26 @@ class NewsCollector:
                         summary[key] += result[key]
         return summary
 
-    def recover_unparsed(self):
-        """A crash after raw commit must not strand a transient source revision."""
-        completed = {rid for row in self.store.records() if row["kind"] in {"parse_receipt", "source_health"}
-                     for rid in row["payload"].get("input_revision_ids", [])}
-        registry = {source["id"]: source for source in self.sources}
-        for row in self.store.records("observation"):
-            if row["id"] in completed:
-                continue
+    def recover_unparsed(self, *, limit=8, migration_limit=500, time_budget_seconds=1):
+        """Indexed, bounded recovery; failed parsing is retained for review."""
+        migration = self.store.index_legacy_parse_work(migration_limit)
+        registry = {source["id"]: source for source in self.sources if source["enabled"]}
+        jobs = self.store.pending_parse_work(registry, limit=limit, migration=migration)
+        started, attempted = time.monotonic(), 0
+        for job in jobs:
+            if attempted and time.monotonic() - started >= time_budget_seconds:
+                break
+            row = self.store.get(job["observation_id"])
             payload = row["payload"]
-            source = registry.get(payload["source_id"])
-            if not source:
-                continue
+            source = registry[payload["source_id"]]
+            attempted += 1
+            source_policy = digest(source)
             if payload.get("parser") == "structured":
                 source = {**source, "adapter": "structured", "profile": payload.get("source_profile")}
             try:
+                # Never reinterpret an old response under a changed registration.
+                if payload.get("source_policy") != source_policy and payload.get("source_policy") != digest(source):
+                    raise ParseFailure("SOURCE_POLICY_CHANGED")
                 if payload["status"] not in {200, 304}:
                     raise ParseFailure("RECOVERED_HTTP_" + str(payload["status"]))
                 body = base64.b64decode(payload["body_b64"])
@@ -274,9 +279,13 @@ class NewsCollector:
                 self.store.accept_items(source, row["id"], items, self.store.cursor("source:" + source["id"], {}))
                 state = "RECOVERED_UNPARSED_RESPONSE"
             except (ValueError, subprocess.SubprocessError) as exc:
-                state = "PARSE_RECOVERY_FAILED:" + type(exc).__name__
+                state = "PARSE_RECOVERY_FAILED:" + (str(exc) if isinstance(exc, ParseFailure) else type(exc).__name__)
+                self.store.fail_parse_work(row["id"], state, health={"source_id": source["id"], "status": state,
+                    "scope": "recovery", "source_policy": payload.get("source_policy"), "input_revision_ids": [row["id"]]})
+                continue
             self.store.append("source_health", {"source_id": source["id"], "status": state, "scope": "recovery",
-                                               "source_policy": payload.get("source_policy"), "input_revision_ids": [row["id"]]})
+                "source_policy": payload.get("source_policy"), "input_revision_ids": [row["id"]]})
+        return {"attempted": attempted, "migration": migration}
 
     @staticmethod
     def pdf_item(body: bytes, url: str) -> NewsItem:
@@ -325,6 +334,8 @@ class NewsCollector:
         except (requests.RequestException, ValueError) as exc:
             result["errors"] = 1
             health = str(exc) if isinstance(exc, ParseFailure) else type(exc).__name__
+            if observation_id:
+                self.store.fail_parse_work(observation_id, health)
             failures = cursor.get("failures", 0) + 1
             delay = min(900, source["poll_seconds"] * 2 ** min(failures, 10))
             if response:
@@ -376,6 +387,8 @@ class NewsCollector:
                                                 self.store.cursor("source:" + source["id"], {})))
             except (requests.RequestException, ValueError, subprocess.SubprocessError) as exc:
                 result["errors"] += 1
+                if oid:
+                    self.store.fail_parse_work(oid, str(exc) if isinstance(exc, ParseFailure) else type(exc).__name__)
                 self.store.append("source_health", {"source_id": source["id"], "status": "DETAIL_FAILED", "scope": "detail",
                                                     "reason": str(exc) if isinstance(exc, ParseFailure) else type(exc).__name__, "url": url,
                                                     "input_revision_ids": [oid] if oid else []})

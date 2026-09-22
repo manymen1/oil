@@ -11,8 +11,9 @@ import re
 from .clock import instant, seconds, utc_now
 from .schema import digest
 from .store import Journal
+from .linking import LINK_VERSION, literal_slots, initialize_index, candidate_links, index_event
 
-VERSION = "fast-event-v1"
+VERSION = "fast-event-v2"
 # Narrow headline patterns intentionally trade recall for inspectability. Bodies
 # are retained in the news journal, but historical context is not classified.
 RULES = {
@@ -57,6 +58,7 @@ def classify(story: dict, assets: list[dict]) -> list[dict]:
     geographies = sorted({a["id"] for a in assets for alias in a["aliases"]
                           if re.search(r"(?<!\w)" + re.escape(alias) + r"(?!\w)", headline, re.I)})
     qualifier = QUALIFIERS.search(headline)
+    slots = literal_slots(headline, assets)
     result = []
     for event_type, pattern in RULES.items():
         match = re.search(pattern, headline, re.I)
@@ -64,8 +66,8 @@ def classify(story: dict, assets: list[dict]) -> list[dict]:
             continue
         result.append({
             "event_type": event_type, "publisher": story["source_id"],
-            "claim_origin": claim_origin, "actor": claim_origin,
-            "geography": geographies, "target": None,
+            "claim_origin": claim_origin, **slots,
+            "geography": geographies,
             "state": "REVIEW_REQUIRED" if qualifier or len(origins) > 1 else (
                 "OFFICIAL_CLAIM" if claim_origin in OFFICIAL_ORIGINS else "REPORTED"),
             "evidence": {"field": "title", "start": match.start(), "end": match.end(), "quote": match.group()},
@@ -81,10 +83,19 @@ class ForwardRecorder:
     def __init__(self, news: Journal, output: Journal, assets: list[dict]):
         self.news, self.output, self.assets = news, output, assets
         with output.transaction() as db:
-            policy = digest([VERSION, assets, RULES, ATTRIBUTION.pattern, QUALIFIERS.pattern])
+            initialize_index(db)
+            policy = digest([VERSION, assets, RULES, ATTRIBUTION.pattern, QUALIFIERS.pattern, LINK_VERSION])
+            legacy_policy = digest(["fast-event-v1", assets, RULES, ATTRIBUTION.pattern, QUALIFIERS.pattern])
             prior_policy = db.execute("SELECT value FROM cursors WHERE key='forward:policy'").fetchone()
             if prior_policy and json.loads(prior_policy[0]) != policy:
-                raise ValueError("forward classifier policy changed; use a new experiment storage root")
+                if json.loads(prior_policy[0]) != legacy_policy:
+                    raise ValueError("forward classifier policy changed; use a new experiment storage root")
+                # A known additive upgrade starts at the old high-water mark;
+                # no old event is reclassified, retimed or overwritten.
+                old_cursor = db.execute("SELECT value FROM cursors WHERE key='forward:seq:fast-event-v1'").fetchone()
+                output.set_cursor(db, "forward:seq:" + VERSION, json.loads(old_cursor[0]) if old_cursor else 0)
+                output.append("forward_policy_revision", {"from": "fast-event-v1", "to": VERSION,
+                    "policy_hash": policy, "candidate_links": LINK_VERSION, "historical_reclassification": False}, db=db)
             output.set_cursor(db, "forward:policy", policy)
             row = db.execute("SELECT value FROM cursors WHERE key='forward:epoch'").fetchone()
             if row:
@@ -132,7 +143,7 @@ class ForwardRecorder:
 
     def run_once(self, limit=200):
         result = {"processed": 0, "events": 0, "excluded": 0, "pending": False,
-                  "market_outcomes": "WAITING_FOR_QUALIFIED_LIVE_FEED", "trading": "disabled"}
+                  "candidate_links": 0, "market_outcomes": "DEFERRED_NEWS_ONLY", "trading": "disabled"}
         cursor_key = "forward:seq:" + VERSION
         offset = self.output.cursor(cursor_key, 0)
         with self.news.connect() as db:
@@ -185,7 +196,18 @@ class ForwardRecorder:
                                "available_at": processed_at, "publisher_timestamp": story.get("published_at"),
                                "story_revision_id": row["id"], "input_revision_ids": [row["id"]],
                                "supersedes_story_revision_id": story.get("supersedes_id")}
+                    links, search_truncated, links_truncated = candidate_links(db, payload, cluster["incident_id"])
+                    payload.update(candidate_episode_links=links, candidate_search_truncated=search_truncated,
+                                   candidate_links_truncated=links_truncated)
+                    payload["input_revision_ids"] += [link["event_id"] for link in links]
                     self.output.append("fast_event", payload, available_at=processed_at, record_id=event_id, db=db)
+                    for link in links:
+                        self.output.append("candidate_episode_link", {**link, "from_event_id": event_id,
+                            "from_incident_id": cluster["incident_id"], "state": "PENDING_REVIEW",
+                            "input_revision_ids": [event_id, link["event_id"]]}, available_at=processed_at,
+                            record_id=digest([LINK_VERSION, event_id, link["event_id"]]), db=db)
+                    index_event(db, event_id, payload)
+                    result["candidate_links"] += len(links)
                     self.output.append("forward_incident_revision", {**cluster, "event_id": event_id,
                         "previous_state": previous_state, "state_changed": previous_state != cluster["state"],
                         "input_revision_ids": [event_id], "cluster_basis": basis,

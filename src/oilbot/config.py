@@ -34,7 +34,8 @@ def load_config(path: str | Path) -> OilConfig:
         raise ValueError("oil supports observation only; broker execution must be disabled")
     if raw.get("pipeline", "reviewed") not in {"reviewed", "forward"}:
         raise ValueError("unknown observation pipeline")
-    if raw.get("market", {}).get("provider") != "fixture":
+    providers = {"fixture", "disabled"} if raw.get("pipeline") == "forward" else {"fixture"}
+    if raw.get("market", {}).get("provider") not in providers:
         raise ValueError("live provider not qualified; only fixture adapter is implemented")
     extraction = raw["extraction"]
     if extraction["provider"] != "codex_cli" or extraction.get("fallback") is not None:

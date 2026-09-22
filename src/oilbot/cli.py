@@ -28,13 +28,14 @@ def preflight(config):
             "codex_available": bool(shutil.which(config.extraction.get("binary", "codex"))),
             "sources": [{"id": s["id"], "enabled": s["enabled"], "model_processing": s["rights"]["model_processing"],
                          "endpoint_qualification": s["qualification"]} for s in config.sources],
-            "blockers": (["LIVE_MARKET_DATA_UNQUALIFIED", "AUTOMATIC_OUTCOMES_NOT_IMPLEMENTED"] if forward else
+            "blockers": ([] if forward else
                          ["LIVE_MARKET_DATA_UNQUALIFIED", "NO_BROKER_ADAPTER", "SOURCE_MODEL_RIGHTS_REQUIRE_QUALIFICATION"]),
+            "deferred": ["GITHUB_CI", "LIVE_MARKET_DATA", "STRATEGY"] if forward else [],
             "pipeline": config.raw.get("pipeline", "reviewed"),
             "forward_recorder_ready": forward,
             "planned_market_provider": config.raw["market"].get("planned_provider"),
             "live_market_ready": False,
-            "next": "Record forward news; connect and qualify live CL/MCL data before measuring outcomes."}
+            "next": "Accumulate auditable forward news and review candidate incident links."}
 
 
 def status(config):
@@ -86,6 +87,8 @@ def record(config, component: str, *, once: bool, fixture: Path | None, stop=Non
             done = False
             def work():
                 nonlocal done
+                if config.raw.get("pipeline") == "forward":
+                    return {"status": "DISABLED_NEWS_ONLY", "economic_evaluation": "deferred"}
                 if not fixture or done:
                     return {"status": "WAITING_FOR_QUALIFIED_LIVE_FEED", "economic_evaluation": "unavailable"}
                 result = record_adapter(FixtureAdapter(fixture), config.root / "quotes")
@@ -148,6 +151,10 @@ def main(argv=None):
             child.add_argument("--source", required=True)
     child = sub.add_parser("source-profiles")
     child.add_argument("--file", type=Path, default=Path("configs/source-profiles.json"))
+    child = sub.add_parser("forward-candidates", help="Read-only, paginated candidate incident links; never merges")
+    child.add_argument("--config", default="configs/forward.yaml")
+    child.add_argument("--after-seq", type=int, default=0)
+    child.add_argument("--limit", type=int, default=100)
     for command in ("qualify-sources", "collection-health"):
         child = sub.add_parser(command, help="Read-only source evidence report; no network calls")
         child.add_argument("--config", default="configs/observe.yaml")
@@ -190,7 +197,10 @@ def main(argv=None):
             child.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command in {"qualify-sources", "collection-health"}:
+        if args.command == "forward-candidates":
+            from .linking import read_candidates
+            result = read_candidates(load_config(args.config).db("forward"), after_seq=args.after_seq, limit=args.limit)
+        elif args.command in {"qualify-sources", "collection-health"}:
             from .source_quality import collection_health, qualify_sources, load_qualification
             from .provenance import load_profiles
             config = load_config(args.config)

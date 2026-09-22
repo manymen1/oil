@@ -10,11 +10,9 @@ storage:
   quote_flush_seconds: 1
   retention: manual_review_no_automatic_deletion
 market:
-  provider: fixture
-  planned_provider: ibkr
-  required_live_mode: realtime
+  provider: disabled
   qualified: false
-  # No fixture is loaded by the supervisor. Market worker reports WAITING.
+  # News-only milestone. Live data, IBKR and strategy work are deferred.
 extraction:
   provider: codex_cli
   model: gpt-5.5

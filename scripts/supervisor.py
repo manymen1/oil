@@ -37,7 +37,7 @@ def main():
                 from oilbot.forward import ForwardRecorder
                 from oilbot.store import Journal
                 ForwardRecorder(Journal(config.db("news")), Journal(config.db("forward")), config.raw["assets"])
-            for component in (("forward", "news", "market") if forward else ("news", "market", "analysis")):
+            for component in (("forward", "news") if forward else ("news", "market", "analysis")):
                 logs[component] = (config.root / f"{component}.log").open("a")
                 restarts[component], next_start[component] = 0, 0
             while not stopped.is_set():
