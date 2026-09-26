@@ -1,11 +1,10 @@
-import base64
 from dataclasses import replace
 
 import pytest
 
 from oilbot.clock import stamp
 from oilbot.config import load_config
-from oilbot.schema import digest, NewsItem
+from oilbot.schema import NewsItem
 from oilbot.sources import NewsCollector
 from oilbot.store import Journal
 
@@ -155,3 +154,27 @@ def test_recorded_failure_not_retried_after_reopening(setup):
     reopened = NewsCollector(Journal(news.path), [source])
     assert reopened.recover_unparsed()["attempted"] == 0
     assert state(news, oid)["state"] == "failed"
+
+
+def test_collection_failure_state_and_health_commit_together(setup, monkeypatch):
+    news, source, collector = setup
+    now = stamp()
+    collector.fetcher = lambda *_: {"body": b"denied", "url": source["url"], "status": 403,
+        "content_type": "text/html", "headers": {}, "started": now, "first_byte": now,
+        "received": now, "delivery": "http"}
+    append = news.append
+    def crash(kind, *args, **kwargs):
+        result = append(kind, *args, **kwargs)
+        if kind == "source_health":
+            raise RuntimeError("crash during failure audit")
+        return result
+    monkeypatch.setattr(news, "append", crash)
+    with pytest.raises(RuntimeError):
+        collector.fetch_source(source)
+    observation = news.records("observation")[0]
+    assert state(news, observation["id"])["state"] == "pending"
+    assert not news.records("source_health")
+    monkeypatch.setattr(news, "append", append)
+    collector.recover_unparsed()
+    assert state(news, observation["id"])["state"] == "failed"
+    assert len(news.records("source_health")) == 1

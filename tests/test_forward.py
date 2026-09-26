@@ -433,8 +433,7 @@ def test_known_v1_upgrade_does_not_reprocess_history(setup):
 
 
 def test_candidate_index_uses_bounded_time_window(setup):
-    from oilbot.linking import index_event
-    from oilbot.clock import epoch_ns, iso_ns
+    from oilbot.clock import epoch_ns
     cfg, news, output, worker = setup
     src = cfg.sources[0]
     warm(news, src)
@@ -449,3 +448,19 @@ def test_candidate_index_uses_bounded_time_window(setup):
         assert "forward_link_window" in " ".join(r["detail"] for r in plan)
     capture(news, src, "IRGC reports vessel ALPHA hit in Hormuz", native="later")
     assert worker.run_once()["candidate_links"] == 0
+
+
+def test_candidate_links_snapshot_is_causal(setup, tmp_path):
+    from oilbot.replay import export_manifest, load_manifest
+    cfg, news, output, worker = setup
+    src = cfg.sources[0]
+    warm(news, src)
+    capture(news, src, "IRGC says tanker ALPHA was attacked near Hormuz", native="a")
+    capture(news, src, "IRGC reports vessel ALPHA hit in Strait of Hormuz", native="b")
+    worker.run_once()
+    _, reader, _ = load_manifest(export_manifest(cfg, tmp_path / "linked-snapshot"))
+    links = [r for r in reader.records if r["kind"] == "candidate_episode_link"]
+    assert len(links) == 1
+    by_id = {r["id"]: r for r in reader.records}
+    assert all(instant(by_id[rid]["available_at"]) <= instant(links[0]["available_at"])
+               for rid in links[0]["payload"]["input_revision_ids"])

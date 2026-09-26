@@ -47,7 +47,7 @@ Ctrl-C shuts down all three children. For a bounded runtime test add `--duration
 45`. Logs are under the configured data directory. No service is installed or
 enabled automatically. The optional systemd user template in
 `deploy/oilbot@.service` now defaults to the forward configuration and components
-`news`, `market`, and `forward`. To run this legacy workflow, explicitly change
+`news` and `forward` only. To run this legacy workflow, explicitly change
 its config to `configs/observe.yaml`. The template assumes the repository is checked
 out at `~/oil`; adjust its two paths if it is installed elsewhere. Do not run
 both supervisors simultaneously.

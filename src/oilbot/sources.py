@@ -334,8 +334,6 @@ class NewsCollector:
         except (requests.RequestException, ValueError) as exc:
             result["errors"] = 1
             health = str(exc) if isinstance(exc, ParseFailure) else type(exc).__name__
-            if observation_id:
-                self.store.fail_parse_work(observation_id, health)
             failures = cursor.get("failures", 0) + 1
             delay = min(900, source["poll_seconds"] * 2 ** min(failures, 10))
             if response:
@@ -345,9 +343,12 @@ class NewsCollector:
                     "next_poll": (instant(utc_now()) + timedelta(seconds=delay)).isoformat()})
         if result["errors"] and health in {"OK", "EMPTY", "UNCHANGED"}:
             health = "OK_DETAIL_INCOMPLETE"
-        self.store.append("source_health", {"source_id": source["id"], "status": health,
-                                           "scope": "collection", "source_policy": digest(source),
-                                           "input_revision_ids": [observation_id] if observation_id else []})
+        health_record = {"source_id": source["id"], "status": health, "scope": "collection",
+                         "source_policy": digest(source), "input_revision_ids": [observation_id] if observation_id else []}
+        if result["errors"] and observation_id:
+            self.store.fail_parse_work(observation_id, health, health=health_record)
+        else:
+            self.store.append("source_health", health_record)
         return result
 
     def fetch_details(self, source: dict, items: list[NewsItem], result: dict):
@@ -387,10 +388,12 @@ class NewsCollector:
                                                 self.store.cursor("source:" + source["id"], {})))
             except (requests.RequestException, ValueError, subprocess.SubprocessError) as exc:
                 result["errors"] += 1
+                reason = str(exc) if isinstance(exc, ParseFailure) else type(exc).__name__
+                health_record = {"source_id": source["id"], "status": "DETAIL_FAILED", "scope": "detail",
+                                 "reason": reason, "url": url, "input_revision_ids": [oid] if oid else []}
                 if oid:
-                    self.store.fail_parse_work(oid, str(exc) if isinstance(exc, ParseFailure) else type(exc).__name__)
-                self.store.append("source_health", {"source_id": source["id"], "status": "DETAIL_FAILED", "scope": "detail",
-                                                    "reason": str(exc) if isinstance(exc, ParseFailure) else type(exc).__name__, "url": url,
-                                                    "input_revision_ids": [oid] if oid else []})
+                    self.store.fail_parse_work(oid, reason, health=health_record)
+                else:
+                    self.store.append("source_health", health_record)
         with self.store.transaction() as db:
             self.store.set_cursor(db, queue_key, {"links": links, "offset": offset + min(2, len(links))})

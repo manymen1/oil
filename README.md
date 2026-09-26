@@ -2,8 +2,8 @@
 
 Standalone oil observation and research application. Current priority: **forward
 news recording**, local deterministic event candidates, and auditable incident
-lineage. No trading. IBKR is the planned market-data provider; live CL/MCL
-recording and automatic market outcomes are not connected yet.
+lineage. The current milestone is a durable geopolitical-news dataset.
+GitHub CI, live market data, IBKR integration and strategy work are deferred.
 
 ## Install
 
@@ -20,12 +20,15 @@ oilbot preflight --config configs/forward.yaml
 python scripts/supervisor.py --config configs/forward.yaml --duration 45
 oilbot status --config configs/forward.yaml
 oilbot collection-health --config configs/forward.yaml
+oilbot forward-candidates --config configs/forward.yaml --limit 20
 ```
 
 The bounded smoke run stops itself. Omit `--duration 45` for a foreground
 continuous run; Ctrl-C stops all workers. No service is installed automatically.
-The forward supervisor runs `news`, `forward`, and a market worker that reports
-`WAITING_FOR_QUALIFIED_LIVE_FEED`. It never calls a model or loads market fixtures.
+The forward supervisor runs only `news` and `forward`. It never calls a model,
+starts a market worker, or loads market fixtures. Indexed recovery avoids repeated
+whole-journal scans. Cross-headline candidate links require review and never
+merge incidents or invent confirmation.
 See [the forward recorder and roadmap](docs/forward-collection.md).
 
 ## Source qualification and collection health

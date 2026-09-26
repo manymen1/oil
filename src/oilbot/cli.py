@@ -46,6 +46,11 @@ def status(config):
         from collections import Counter
         output["journals"][name] = dict(Counter(r["kind"] for r in store.records()))
     output["attempts_by_day"] = Journal(config.db("analysis")).budget()
+    news = Journal(config.db("news"))
+    with news.connect() as db:
+        output["recovery"] = {"indexed_work_by_state": {r[0]: r[1] for r in db.execute(
+            "SELECT state,COUNT(*) FROM parse_work GROUP BY state")}}
+    output["recovery"]["legacy_index"] = news.cursor("recovery:index")
     records, gaps = read_archive(config.root / "quotes")
     output["market"] = qualify(records, gaps)
     output["heartbeats"] = [r for r in Journal(config.db("runtime")).records("heartbeat")][-3:]
