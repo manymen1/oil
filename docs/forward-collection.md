@@ -147,7 +147,10 @@ without recorded live HTTP receipt. Every exclusion is recorded. A publisher
 without timestamps establishes local first-seen time, not event freshness;
 all candidates require review. Updates retain supersession notices and append
 `story_event_lineage` plus `forward_evidence_transition` records. New evidence is
-`ACTIVE`; an eligible update marks its predecessor `SUPERSEDED`. Explicit source
+`ACTIVE`; an eligible update marks its predecessor `DOCUMENT_SUPERSEDED`. This
+means the containing document revision is no longer current, not that the claim
+has been disproved. Existing v3 `SUPERSEDED` records retain their original spelling
+and the same document-lifecycle meaning. Explicit source
 statuses `correction`, `withdrawal` and `deleted` mark only that story's prior
 effective events `CORRECTED`, `WITHDRAWN` or `DELETED`. Intervening non-classified
 updates do not sever lineage. Original events and other publishers' evidence
@@ -175,7 +178,25 @@ ambiguous values remain in plural evidence lists; singular slots stay null.
 `asset_ids` identifies facilities, `location_ids` identifies matched registered
 places, and `regions` retains their registry geography. Region normalization
 is supported by the matched alias and versioned registry, not a guessed place.
-`publisher`, `syndication_origin` and `claim_origin` are separate fields.
+`publisher`, `syndication_origin`, `source_attributions` and `claim_origin` are
+separate fields. RSS wire-provenance-v2 distinguishes a leading `(Reuters)` / `By
+Reuters` credit or exact wire author field from an `according to Reuters` citation.
+Citations populate `source_attributions`, never establish syndication or an actor
+claimant. Every recognized credit/citation has an exact text/author span in
+`wire_evidence`. Multiple different wire credits leave origin unknown. These are
+literal publisher-provided credits, not independent identity verification.
+
+Fast-event-v4 preserves unqualified historical `origin` as
+`legacy_origin_unverified`, not as a newly validated syndication claim. Old events
+are untouched. Raw captures and parse receipts now identify `source-v2`; pending
+observations from an older/unknown parser version are quarantined with
+`PARSER_VERSION_CHANGED`, not silently reinterpreted. On a fresh receipt of
+unchanged source text, a metadata-only wire-parser upgrade creates an auditable
+`parser_reinterpretation` revision excluded from new events. It does not mark
+previous evidence withdrawn or superseded. Genuine text/status updates remain
+ordinary source revisions. Empty new fields do not manufacture revisions for
+adapters that do not emit wire provenance. Reported revision counts include these
+metadata revisions, with a separate parser-reinterpretation count.
 
 Document identity uses explicit UKMTO report IDs, supplied original URLs, or
 publisher-scoped native story lineage. Equal normalized headlines never establish
@@ -212,6 +233,23 @@ new links are available only at their actual derivation time.
 
 ## Human review and as-of episodes
 
+Humans can propose a relationship even if the automatic linker missed it:
+
+```bash
+oilbot propose-forward-link --config configs/forward.yaml \
+  --left EVENT_ID_A --right EVENT_ID_B --relation SAME_EPISODE_CANDIDATE \
+  --reviewer YOUR_NAME --reason "Explain the evidence supporting this proposal"
+```
+
+The returned candidate ID can be reviewed with the command below. Other proposal
+relations are `SAME_EVENT_CANDIDATE` and `SYNDICATED_REPORT_CANDIDATE`. A proposal
+validates both captured event IDs, requires reviewer/reason, and appends a
+`HUMAN` candidate at the actual proposal time. It does not merge anything, grant
+confirmation or bypass review. `--proposal-id` enables idempotent retries; changed
+content under the same ID is rejected. Manual candidates appear in the normal
+candidate queue. Quality reporting counts them separately without adding them
+to the automatic linker's evaluation-rate numerator.
+
 ```bash
 oilbot review-forward-link --config configs/forward.yaml \
   --candidate CANDIDATE_RECORD_ID --decision SAME_EVENT \
@@ -238,14 +276,14 @@ not part of the collection hot path.
 
 `forward.sqlite3` contains start records, processing/exclusion receipts,
 `fast_event`, `forward_incident_revision`, and supersession notices. Outputs and
-cursors commit atomically; restarts do not duplicate events. The v3 upgrade adopts
+cursors commit atomically; restarts do not duplicate events. The v3/v4 upgrade adopts
 the consumed v1/v2 cursor and preserves the experiment epoch. Rule/registry changes
 append effective-dated policy snapshots and apply only to unconsumed revisions;
 no new storage root or historic reclassification is required. Events carry
 classifier/asset policy hashes and source/asset registry versions. A running
 classifier rejects a policy change until restarted. Version constants must be
 bumped when extraction or linking logic changes. Old events and their old links
-are preserved, including legacy headline-based clustering; v3 does not rewrite
+are preserved, including legacy headline-based clustering; upgrades do not rewrite
 historical mistakes. Legacy evidence without transitions is `LEGACY_UNMODELED`.
 Snapshots include the forward journal, policies, lineage, links and reviews:
 

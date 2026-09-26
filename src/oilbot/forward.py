@@ -13,7 +13,7 @@ from .schema import digest
 from .store import Journal
 from .entities import ENTITY_VERSION, literal_slots
 
-VERSION = "fast-event-v3"
+VERSION = "fast-event-v4"
 CURSOR_KEY = "forward:seq"
 # Narrow headline patterns intentionally trade recall for inspectability. Bodies
 # are retained in the news journal, but historical context is not classified.
@@ -66,7 +66,10 @@ def classify(story: dict, assets: list[dict]) -> list[dict]:
         result.append({
             "event_type": event_type, "publisher": story["source_id"],
             "claim_origin": claim_origin, **slots,
-            "syndication_origin": story.get("origin"),
+            "syndication_origin": story.get("origin") if story.get("wire_provenance_version") else None,
+            "source_attributions": story.get("source_attributions", []),
+            "wire_evidence": story.get("wire_evidence", []),
+            "legacy_origin_unverified": story.get("origin") if not story.get("wire_provenance_version") else None,
             "state": "REVIEW_REQUIRED" if qualifier or len(origins) > 1 else (
                 "OFFICIAL_CLAIM" if claim_origin in OFFICIAL_ORIGINS else "REPORTED"),
             "evidence": {"field": "title", "start": match.start(), "end": match.end(), "quote": match.group()},
@@ -136,6 +139,8 @@ class ForwardRecorder:
             return "NOT_LIVE_HTTP"
         if instant(receipt) > instant(utc_now()):
             return "FUTURE_RECEIPT_CLOCK"
+        if story.get("parser_reinterpretation"):
+            return "PARSER_REINTERPRETATION"
         if story.get("status") in {"withdrawal", "deleted", "correction"}:
             return "REVISION_REQUIRES_REVIEW"
         return None
@@ -218,7 +223,7 @@ class ForwardRecorder:
                         available_at=processed_at, db=db)
                 if eligible_revision:
                     evidence_state = {"correction": "CORRECTED", "withdrawal": "WITHDRAWN",
-                                      "deleted": "DELETED"}.get(story.get("status"), "SUPERSEDED")
+                                      "deleted": "DELETED"}.get(story.get("status"), "DOCUMENT_SUPERSEDED")
                     for event_id in prior_events:
                         self._transition(db, event_id, evidence_state, story, row, processed_at)
                 event_ids = []

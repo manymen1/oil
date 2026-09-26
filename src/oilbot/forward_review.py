@@ -10,6 +10,38 @@ from .clock import instant, utc_now
 from .schema import digest
 
 DECISIONS = {"SAME_EVENT", "SAME_EPISODE", "SYNDICATED_REPORT", "UNRELATED", "UNCERTAIN"}
+RELATIONS = {"SAME_EVENT_CANDIDATE", "SAME_EPISODE_CANDIDATE", "SYNDICATED_REPORT_CANDIDATE"}
+
+
+def propose_link(output, left, right, relation, reason, reviewer, *, proposal_id=None):
+    """Propose only; a separate explicit review is required to affect mappings."""
+    if relation not in RELATIONS or not reason.strip() or not reviewer.strip() or left == right:
+        raise ValueError("valid relation, distinct events, reason and reviewer required")
+    with output.transaction() as db:
+        events = []
+        at = utc_now()
+        for eid in (left, right):
+            row = db.execute("SELECT kind,payload,available_at FROM records WHERE id=?", (eid,)).fetchone()
+            if row is None or row["kind"] != "fast_event" or instant(row["available_at"]) > instant(at):
+                raise ValueError("proposal endpoints must be available captured fast events")
+            events.append(json.loads(row["payload"]))
+        if relation == "SAME_EVENT_CANDIDATE" and events[0]["event_type"] != events[1]["event_type"]:
+            raise ValueError("different event types require an episode proposal")
+        supplied = {"from_event_id": left, "event_id": right, "left_event_id": left, "right_event_id": right,
+            "from_incident_id": events[0]["incident_id"], "incident_id": events[1]["incident_id"],
+            "relation_type": relation, "reason": reason.strip(), "reviewer": reviewer.strip(),
+            "proposal_origin": "HUMAN", "proposal_version": "manual-link-v1"}
+        rid = proposal_id or str(uuid.uuid4())
+        existing = db.execute("SELECT kind,payload FROM records WHERE id=?", (rid,)).fetchone()
+        if existing:
+            prior = json.loads(existing["payload"])
+            if existing["kind"] != "candidate_episode_link" or any(prior.get(k) != v for k, v in supplied.items()):
+                raise ValueError("proposal ID collision")
+            return rid
+        output.append("candidate_episode_link", {**supplied, "state": "PENDING_REVIEW", "proposed_at": at,
+            "reasons": ["HUMAN_PROPOSED"], "review_required": True, "merge_authorized": False,
+            "confirmation_granted": False, "input_revision_ids": [left, right]}, available_at=at, record_id=rid, db=db)
+        return rid
 
 
 def review_link(output, candidate_link_id, decision, reason, reviewer, *, supersedes_review_id=None, review_id=None):

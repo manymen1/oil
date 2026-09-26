@@ -18,7 +18,8 @@ from urllib3.exceptions import HTTPError as TransportError
 
 from .clock import instant, stamp, utc_now
 from .schema import NewsItem, digest
-from .store import Journal
+from .store import Journal, PARSER_VERSION
+from .wire_attribution import wire_provenance
 
 
 class ParseFailure(ValueError):
@@ -46,11 +47,7 @@ def published(value: str | None) -> str | None:
 
 
 def origin(text: str) -> str | None:
-    # Attribution is conservative; mentioning a wire does not establish origin.
-    for name in ("Reuters", "Bloomberg", "Associated Press", "AFP"):
-        if re.search(rf"(?:\(\s*{name}\s*\)|by\s+{name}\b|according to\s+{name}\b)", text, re.I):
-            return name.lower().replace(" ", "_")
-    return None
+    return wire_provenance(text)["origin"]
 
 
 class RSSAdapter:
@@ -82,10 +79,11 @@ class RSSAdapter:
             status = text("status").lower()
             if status not in {"update", "correction", "withdrawal"}:
                 status = "correction" if re.match(r"^CORRECTION\b", title, re.I) else "update"
-            result.append(NewsItem(native, link, title, title + "\n" + body,
+            full_text = title + "\n" + body
+            author = clean(text("creator") or text("author")) or None
+            result.append(NewsItem(native, link, title, full_text,
                                    published(text("pubDate") or text("updated") or text("published")),
-                                   status=status, origin=origin(title + " " + body),
-                                   author=clean(text("creator") or text("author")) or None))
+                                   status=status, author=author, **wire_provenance(full_text, author)))
         return result
 
 
@@ -270,6 +268,8 @@ class NewsCollector:
                 # Never reinterpret an old response under a changed registration.
                 if payload.get("source_policy") != source_policy and payload.get("source_policy") != digest(source):
                     raise ParseFailure("SOURCE_POLICY_CHANGED")
+                if payload.get("parser_version") != PARSER_VERSION:
+                    raise ParseFailure("PARSER_VERSION_CHANGED")
                 if payload["status"] not in {200, 304}:
                     raise ParseFailure("RECOVERED_HTTP_" + str(payload["status"]))
                 body = base64.b64decode(payload["body_b64"])

@@ -31,6 +31,9 @@ class NewsItem:
     original_url: str | None = None
     reposter: str | None = None
     media_sha256: str | None = None
+    source_attributions: tuple[str, ...] = ()
+    wire_evidence: tuple[dict, ...] = ()
+    wire_provenance_version: str | None = None
 
 
 class NewsSourceAdapter(Protocol):

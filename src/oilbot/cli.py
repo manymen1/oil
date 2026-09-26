@@ -194,6 +194,14 @@ def main(argv=None):
     child.add_argument("--reviewer", required=True)
     child.add_argument("--supersedes-review")
     child.add_argument("--review-id")
+    child = sub.add_parser("propose-forward-link", help="Propose a relation between captured events; separate review required")
+    child.add_argument("--config", default="configs/forward.yaml")
+    child.add_argument("--left", required=True)
+    child.add_argument("--right", required=True)
+    child.add_argument("--relation", choices=("SAME_EVENT_CANDIDATE", "SAME_EPISODE_CANDIDATE", "SYNDICATED_REPORT_CANDIDATE"), required=True)
+    child.add_argument("--reason", required=True)
+    child.add_argument("--reviewer", required=True)
+    child.add_argument("--proposal-id")
     child = sub.add_parser("forward-episodes", help="Read-only as-of mapping from human reviews")
     child.add_argument("--config", default="configs/forward.yaml")
     child.add_argument("--through")
@@ -255,6 +263,10 @@ def main(argv=None):
             if args.source not in {s["id"] for s in config.sources}:
                 raise ValueError("unknown source")
             result = {"transition_id": reset_source_circuit(Journal(config.db("news")), args.source, args.reason)}
+        elif args.command == "propose-forward-link":
+            from .forward_review import propose_link
+            result = {"candidate_link_id": propose_link(Journal(load_config(args.config).db("forward")),
+                args.left, args.right, args.relation, args.reason, args.reviewer, proposal_id=args.proposal_id)}
         elif args.command == "review-forward-link":
             from .forward_review import review_link
             result = {"review_id": review_link(Journal(load_config(args.config).db("forward")), args.candidate,

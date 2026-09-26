@@ -13,6 +13,9 @@ from pathlib import Path
 from .clock import instant, stamp, utc_now
 from .schema import canonical, digest, to_dict
 
+PARSER_VERSION = "source-v2"
+WIRE_FIELDS = {"source_attributions", "wire_evidence", "wire_provenance_version"}
+
 
 class Journal:
     """Append-only records with transactional cursors. SQLite serializes writers.
@@ -216,7 +219,7 @@ class Journal:
         payload = {key: value for key, value in response.items() if key != "body"}
         payload.update(source_id=source["id"], source_role=source["role"],
                        body_b64=base64.b64encode(body).decode(),
-                       sha256=hashlib.sha256(body).hexdigest(), source_policy=digest(source))
+                       sha256=hashlib.sha256(body).hexdigest(), source_policy=digest(source), parser_version=PARSER_VERSION)
         rid = self.append("observation", payload, available_at=response["received"]["utc"])
         committed = stamp()
         self.append("commit_receipt", {"input_revision_ids": [rid], "commit_observed": committed,
@@ -245,7 +248,11 @@ class Journal:
                 initial_snapshot = observation["seq"] <= baseline_seq
             for item in items:
                 story = digest([source["id"], item.native_id])
-                content = digest(to_dict(item))
+                normalized = to_dict(item)
+                # Empty additions must not manufacture revisions for old items.
+                normalized = {k: v for k, v in normalized.items() if k not in WIRE_FIELDS or v}
+                content = digest(normalized)
+                parser_reinterpretation = False
                 previous = db.execute("SELECT value FROM cursors WHERE key=?", ("story:" + story,)).fetchone()
                 previous = json.loads(previous[0]) if previous else None
                 if previous:
@@ -267,6 +274,11 @@ class Journal:
                                                   "source_id": source["id"]}, db=db)
                     self.set_cursor(db, "story:" + story, {**previous, "observation_seq": observation["seq"]})
                     continue
+                if previous:
+                    old = json.loads(db.execute("SELECT payload FROM records WHERE id=?", (previous["revision_id"],)).fetchone()[0])
+                    literal_fields = {k for k in normalized if k not in WIRE_FIELDS | {"origin"}}
+                    parser_reinterpretation = (old.get("transform") != PARSER_VERSION and
+                        digest({k: old.get(k) for k in literal_fields}) == digest({k: normalized[k] for k in literal_fields}))
                 rid = digest([story, content, previous["revision_id"] if previous else None])
                 payload = {**to_dict(item), "source_id": source["id"], "source_role": source["role"],
                            "source_type": source.get("source_type", source["role"]),
@@ -274,7 +286,8 @@ class Journal:
                            "story_id": story, "content_hash": content,
                            "revision": previous["revision"] + 1 if previous else 1,
                            "supersedes_id": previous["revision_id"] if previous else None,
-                           "input_revision_ids": [observation_id], "transform": "source-v1",
+                           "input_revision_ids": [observation_id], "transform": PARSER_VERSION,
+                           "parser_reinterpretation": parser_reinterpretation,
                            "observed_at": observation["available_at"],
                            "local_received_at": observation["payload"]["received"]["utc"],
                            "request_started_at": observation["payload"].get("started", {}).get("utc"),
@@ -289,7 +302,7 @@ class Journal:
                     "revision": payload["revision"], "observation_seq": observation["seq"]})
                 output.append(rid)
             self.append("parse_receipt", {"input_revision_ids": [observation_id], "revision_ids": output,
-                                          "transform": "source-v1"}, db=db)
+                                          "transform": PARSER_VERSION}, db=db)
             self.set_cursor(db, "source:" + source["id"], cursor)
         return output
 

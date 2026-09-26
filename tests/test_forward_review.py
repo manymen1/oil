@@ -134,7 +134,7 @@ def test_revision_generates_new_active_evidence_without_rewriting_old(setup):
     assert len(events) == 2 and events[0] == first
     assert events[0]["payload"]["incident_id"] == events[1]["payload"]["incident_id"]
     assert first["id"] not in events[1]["payload"]["input_revision_ids"]
-    assert episode_map(output.path)["evidence_states"] == {first["id"]: "SUPERSEDED", events[1]["id"]: "ACTIVE"}
+    assert episode_map(output.path)["evidence_states"] == {first["id"]: "DOCUMENT_SUPERSEDED", events[1]["id"]: "ACTIVE"}
 
 
 def test_review_validation_and_linker_transaction_rollback(setup, monkeypatch):
