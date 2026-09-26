@@ -173,6 +173,10 @@ def source_health(source, records, cursors, *, now, window_seconds):
             except ValueError:
                 invalid_publications += 1
     cursor = cursors.get("source:" + sid, {})
+    circuit = cursor.get("circuit")
+    if source["enabled"] and circuit and circuit.get("source_policy") == digest(source):
+        state = "CIRCUIT_OPEN"
+        warnings.append("OPERATOR_REVIEW_REQUIRED")
     next_poll = cursor.get("next_poll")
     backoff = bool(failures and next_poll and _seconds(next_poll, now) > 0)
     window_health = [r for r in main_health if recent(r)]
@@ -184,7 +188,7 @@ def source_health(source, records, cursors, *, now, window_seconds):
             "last_success_at": last_ok["available_at"] if last_ok else None,
             "seconds_since_success": age, "stale_after_seconds": threshold,
             "last_health_status": latest_status, "consecutive_failed_health_events": failures,
-            "next_poll_at": next_poll, "backoff_active": backoff,
+            "next_poll_at": next_poll, "backoff_active": backoff, "circuit": circuit,
             "window": {"transport_responses": sum(recent(r) for r in transport),
                        "response_interval_seconds": _summary([v for v in intervals if v >= 0]),
                        "negative_response_intervals": sum(v < 0 for v in intervals),

@@ -43,17 +43,22 @@ def status(config):
     output["journals"] = {}
     for name in ("news", "analysis", "runtime", "forward"):
         store = Journal(config.db(name))
-        from collections import Counter
-        output["journals"][name] = dict(Counter(r["kind"] for r in store.records()))
+        with store.connect() as db:
+            output["journals"][name] = dict(db.execute("SELECT kind,COUNT(*) FROM records GROUP BY kind"))
     output["attempts_by_day"] = Journal(config.db("analysis")).budget()
     news = Journal(config.db("news"))
     with news.connect() as db:
         output["recovery"] = {"indexed_work_by_state": {r[0]: r[1] for r in db.execute(
             "SELECT state,COUNT(*) FROM parse_work GROUP BY state")}}
     output["recovery"]["legacy_index"] = news.cursor("recovery:index")
-    records, gaps = read_archive(config.root / "quotes")
-    output["market"] = qualify(records, gaps)
-    output["heartbeats"] = [r for r in Journal(config.db("runtime")).records("heartbeat")][-3:]
+    if config.raw.get("pipeline") == "forward":
+        output["market"] = {"status": "DISABLED_NEWS_ONLY"}
+    else:
+        records, gaps = read_archive(config.root / "quotes")
+        output["market"] = qualify(records, gaps)
+    with Journal(config.db("runtime")).connect() as db:
+        output["heartbeats"] = [{**dict(r), "payload": json.loads(r["payload"])} for r in db.execute(
+            "SELECT * FROM records WHERE kind='heartbeat' ORDER BY seq DESC LIMIT 3")][::-1]
     return output
 
 
@@ -69,12 +74,19 @@ def record(config, component: str, *, once: bool, fixture: Path | None, stop=Non
             runtime.append("runtime_gap", {"component": component, "reason": "RESTART_OR_SLEEP",
                                           "previous": prior, "current": current})
         runtime.append("runtime_start", {"component": component, "clock": current, "config_hash": digest(config.raw)})
+        from .operations import clock_sample, sample_storage
+        runtime.append("clock_health", clock_sample(component, prior, current))
         if component == "news":
             collector = NewsCollector(Journal(config.db("news")), config.sources)
             work = lambda: collector.poll_once()
         elif component == "forward":
             from .forward import ForwardRecorder
-            worker = ForwardRecorder(Journal(config.db("news")), Journal(config.db("forward")), config.raw["assets"])
+            worker = ForwardRecorder(Journal(config.db("news")), Journal(config.db("forward")), config.raw["assets"],
+                asset_registry_version=config.raw["asset_registry_version"], source_registry_version=config.raw["registry_version"])
+            work = worker.run_once
+        elif component == "linker":
+            from .linking import LinkerWorker
+            worker = LinkerWorker(Journal(config.db("news")), Journal(config.db("forward")))
             work = worker.run_once
         elif component == "analysis":
             if config.raw.get("pipeline") == "forward":
@@ -100,6 +112,7 @@ def record(config, component: str, *, once: bool, fixture: Path | None, stop=Non
                 done = True
                 return result
         last = current
+        last_clock = current
         try:
             while not stop.is_set():
                 current = stamp()
@@ -109,16 +122,29 @@ def record(config, component: str, *, once: bool, fixture: Path | None, stop=Non
                 if current["boot_id"] == last["boot_id"]:
                     drift = seconds(current["utc"], last["utc"]) - (current["monotonic_ns"] - last["monotonic_ns"]) / 1e9
                     if abs(drift) > 5:
+                        runtime.append("clock_health", clock_sample(component, last, current))
                         runtime.append("runtime_gap", {"component": component, "reason": "CLOCK_STEP_OR_SUSPEND",
                                                       "wall_minus_monotonic_seconds": drift, "previous": last, "current": current})
                 result = work()
-                last = stamp()
+                finished = stamp()
+                # Compare heartbeat-to-heartbeat, including time inside work().
+                # Comparing only before work misses long calls and clock steps.
+                if seconds(finished["utc"], last["utc"]) > 90 and seconds(current["utc"], last["utc"]) <= 90:
+                    runtime.append("runtime_gap", {"component": component, "reason": "WORK_OR_HEARTBEAT_DELAY",
+                        "previous": last, "current": finished})
+                clock = clock_sample(component, last, finished)
+                if clock["state"] != "NO_STEP_DETECTED" or finished["monotonic_ns"] - last_clock["monotonic_ns"] >= 60 * 10**9:
+                    runtime.append("clock_health", clock)
+                    last_clock = finished
+                if component == "news":
+                    sample_storage(runtime, config)
+                last = finished
                 with runtime.transaction() as db:
                     runtime.append("heartbeat", {"component": component, "clock": last, "result": result}, db=db)
                     runtime.set_cursor(db, "runtime:" + component, last)
                 if once:
                     return result
-                stop.wait(1 if component == "forward" else (5 if component == "analysis" and result.get("pending") else 30))
+                stop.wait(1 if component in {"forward", "linker"} else (5 if component == "analysis" and result.get("pending") else 30))
         finally:
             runtime.append("runtime_stop", {"component": component, "clock": stamp()})
     return {"stopped": component}
@@ -131,7 +157,7 @@ def main(argv=None):
         child = sub.add_parser(command)
         child.add_argument("--config", default="configs/observe.yaml")
         if command == "record":
-            child.add_argument("--component", choices=("news", "market", "analysis", "forward"), required=True)
+            child.add_argument("--component", choices=("news", "market", "analysis", "forward", "linker"), required=True)
             child.add_argument("--once", action="store_true")
             child.add_argument("--fixture", type=Path)
         if command in {"snapshot", "demo"}:
@@ -160,6 +186,24 @@ def main(argv=None):
     child.add_argument("--config", default="configs/forward.yaml")
     child.add_argument("--after-seq", type=int, default=0)
     child.add_argument("--limit", type=int, default=100)
+    child = sub.add_parser("review-forward-link", help="Append a human decision; never edits evidence")
+    child.add_argument("--config", default="configs/forward.yaml")
+    child.add_argument("--candidate", required=True)
+    child.add_argument("--decision", choices=("SAME_EVENT", "SAME_EPISODE", "SYNDICATED_REPORT", "UNRELATED", "UNCERTAIN"), required=True)
+    child.add_argument("--reason", required=True)
+    child.add_argument("--reviewer", required=True)
+    child.add_argument("--supersedes-review")
+    child.add_argument("--review-id")
+    child = sub.add_parser("forward-episodes", help="Read-only as-of mapping from human reviews")
+    child.add_argument("--config", default="configs/forward.yaml")
+    child.add_argument("--through")
+    child = sub.add_parser("forward-quality", help="Read-only forward dataset and operational diagnostics")
+    child.add_argument("--config", default="configs/forward.yaml")
+    child.add_argument("--window-seconds", type=int, default=86400)
+    child = sub.add_parser("reset-source-circuit", help="Record operator review and allow a source retry; no fetch")
+    child.add_argument("--config", default="configs/forward.yaml")
+    child.add_argument("--source", required=True)
+    child.add_argument("--reason", required=True)
     for command in ("qualify-sources", "collection-health"):
         child = sub.add_parser(command, help="Read-only source evidence report; no network calls")
         child.add_argument("--config", default="configs/observe.yaml")
@@ -202,7 +246,23 @@ def main(argv=None):
             child.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command == "forward-candidates":
+        if args.command == "forward-quality":
+            from .forward_quality import forward_quality
+            result = forward_quality(load_config(args.config), window_seconds=args.window_seconds)
+        elif args.command == "reset-source-circuit":
+            from .operations import reset_source_circuit
+            config = load_config(args.config)
+            if args.source not in {s["id"] for s in config.sources}:
+                raise ValueError("unknown source")
+            result = {"transition_id": reset_source_circuit(Journal(config.db("news")), args.source, args.reason)}
+        elif args.command == "review-forward-link":
+            from .forward_review import review_link
+            result = {"review_id": review_link(Journal(load_config(args.config).db("forward")), args.candidate,
+                args.decision, args.reason, args.reviewer, supersedes_review_id=args.supersedes_review, review_id=args.review_id)}
+        elif args.command == "forward-episodes":
+            from .forward_review import episode_map
+            result = episode_map(load_config(args.config).db("forward"), through=args.through)
+        elif args.command == "forward-candidates":
             from .linking import read_candidates
             result = read_candidates(load_config(args.config).db("forward"), after_seq=args.after_seq, limit=args.limit)
         elif args.command in {"qualify-sources", "collection-health"}:

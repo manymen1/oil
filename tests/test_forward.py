@@ -9,7 +9,8 @@ import pytest
 from oilbot.cli import main, preflight, record
 from oilbot.clock import instant, stamp
 from oilbot.config import load_config
-from oilbot.forward import ForwardRecorder, RULES, VERSION, classify
+from oilbot.forward import CURSOR_KEY, ForwardRecorder, RULES, VERSION, classify
+from oilbot.linking import LinkerWorker
 from oilbot.schema import NewsItem
 from oilbot.sources import HTTPFetcher, ListingAdapter, RSSAdapter
 from oilbot.store import Journal
@@ -52,7 +53,7 @@ def test_receipts_survive_and_publication_never_becomes_availability(setup):
     assert p["received_at"] == row["payload"]["local_received_at"]
     assert instant(event["available_at"]) >= instant(p["received_at"])
     assert p["publisher"] == "al_jazeera" and p["claim_origin"] == "irgc"
-    assert p["geography"] == ["hormuz"] and p["confirmation"] == "UNVERIFIED"
+    assert p["location_ids"] == ["hormuz"] and p["confirmation"] == "UNVERIFIED"
     assert p["state"] == "OFFICIAL_CLAIM"
     assert p["review_required"]
 
@@ -64,10 +65,12 @@ def test_multiple_publishers_are_not_independent_confirmations(setup):
         capture(news, src, "IRGC says tanker hit in Hormuz")
     worker.run_once()
     events = [r["payload"] for r in output.records("fast_event")]
-    assert len({e["incident_id"] for e in events}) == 1
-    assert [e["novelty"] for e in events] == [True, False, False]
+    assert len({e["incident_id"] for e in events}) == 3
+    assert all(e["novelty"] for e in events)
+    assert LinkerWorker(news, output).run_once()["candidate_links"] == 3
+    assert all("EXACT_HEADLINE" in r["payload"]["reasons"] for r in output.records("candidate_episode_link"))
     latest = output.records("forward_incident_revision")[-1]["payload"]
-    assert len(latest["publishers"]) == 3
+    assert len(latest["publishers"]) == 1
     assert latest["independent_confirmation"] == "NONE"
     assert latest["state"] == "OFFICIAL_CLAIM"
 
@@ -155,7 +158,7 @@ def test_transaction_rolls_back_outputs_and_cursor(setup, monkeypatch):
     cfg, news, output, worker = setup
     warm(news, cfg.sources[0])
     worker.run_once()
-    offset = output.cursor("forward:seq:" + VERSION)
+    offset = output.cursor(CURSOR_KEY)
     capture(news, cfg.sources[0], "IRGC says tanker hit in Hormuz")
     original = output.append
     def fail(kind, *args, **kwargs):
@@ -166,7 +169,7 @@ def test_transaction_rolls_back_outputs_and_cursor(setup, monkeypatch):
     with pytest.raises(RuntimeError):
         worker.run_once()
     assert not output.records("fast_event")
-    assert output.cursor("forward:seq:" + VERSION) == offset
+    assert output.cursor(CURSOR_KEY) == offset
     monkeypatch.setattr(output, "append", original)
     assert worker.run_once()["events"] == 1
 
@@ -295,10 +298,22 @@ def test_snapshot_preserves_forward_provenance(setup, tmp_path):
     assert len([r for r in reader.records if r["kind"] == "fast_event"]) == 1
 
 
-def test_classifier_policy_change_rejected(setup):
+def test_classifier_policy_change_preserves_history(setup):
     cfg, news, output, worker = setup
+    warm(news, cfg.sources[0])
+    capture(news, cfg.sources[0], "IRGC says tanker hit in Hormuz")
+    worker.run_once()
+    before = output.records("fast_event")
+    changed = ForwardRecorder(news, output, [])
+    assert changed.epoch == worker.epoch
+    assert changed.run_once()["processed"] == 0
+    assert output.records("fast_event") == before
+    capture(news, cfg.sources[0], "IRGC says tanker hit in Hormuz", native="new")
     with pytest.raises(ValueError, match="policy changed"):
-        ForwardRecorder(news, output, [])
+        worker.run_once()
+    changed.run_once()
+    assert output.records("fast_event")[-1]["payload"]["location_ids"] == []
+    assert len(output.records("forward_policy_revision")) == 2
 
 
 def test_gzip_chunked_transport_does_not_mix_read_paths():
@@ -333,16 +348,19 @@ def test_cross_headline_candidate_does_not_merge_or_confirm(setup):
     warm(news, src)
     capture(news, src, "IRGC says tanker ALPHA was attacked near Hormuz", native="a")
     capture(news, src, "IRGC reports vessel ALPHA hit in Strait of Hormuz", native="b")
-    result = worker.run_once()
+    worker.run_once()
+    linker = LinkerWorker(news, output)
+    result = linker.run_once()
     events = [r["payload"] for r in output.records("fast_event")]
     assert result["candidate_links"] == 1
     assert events[0]["incident_id"] != events[1]["incident_id"]
     assert all(e["novelty"] and e["confirmation"] == "UNVERIFIED" for e in events)
-    link = events[1]["candidate_episode_links"][0]
+    assert all("candidate_episode_links" not in e for e in events)
+    link = output.records("candidate_episode_link")[0]["payload"]
     assert "SAME_VESSEL" in link["reasons"] and "SAME_CLAIM_ORIGIN" in link["reasons"]
     assert link["review_required"] and not link["merge_authorized"]
     assert output.records("candidate_episode_link")[0]["payload"]["state"] == "PENDING_REVIEW"
-    assert worker.run_once()["candidate_links"] == 0
+    assert linker.run_once()["candidate_links"] == 0
 
 
 @pytest.mark.parametrize("other", [
@@ -355,7 +373,8 @@ def test_conflicting_candidate_dimensions_rejected(setup, other):
     warm(news, cfg.sources[0])
     capture(news, cfg.sources[0], "IRGC says tanker ALPHA attacked in Hormuz", native="a")
     capture(news, cfg.sources[0], other, native="b")
-    assert worker.run_once()["candidate_links"] == 0
+    worker.run_once()
+    assert LinkerWorker(news, output).run_once()["candidate_links"] == 0
 
 
 def test_explicit_time_conflict_rejects_candidate(setup):
@@ -364,7 +383,8 @@ def test_explicit_time_conflict_rejects_candidate(setup):
     warm(news, src)
     capture(news, src, "IRGC says tanker ALPHA attacked in Hormuz at 2026-09-21T01:00:00Z", native="a")
     capture(news, src, "IRGC reports tanker ALPHA hit in Hormuz at 2026-09-21T10:00:00Z", native="b")
-    assert worker.run_once()["candidate_links"] == 0
+    worker.run_once()
+    assert LinkerWorker(news, output).run_once()["candidate_links"] == 0
     assert output.records("fast_event")[0]["payload"]["event_time_if_explicit"] == "2026-09-21T01:00:00+00:00"
 
 
@@ -391,7 +411,8 @@ def test_facility_candidate_and_no_region_only_link(setup):
     # Same region/type but no origin, actor, or named target is insufficient.
     capture(news, src, "Tanker hit in Hormuz", native="c")
     capture(news, src, "Vessel attacked in Hormuz", native="d")
-    assert worker.run_once()["candidate_links"] == 1
+    worker.run_once()
+    assert LinkerWorker(news, output).run_once()["candidate_links"] == 1
     link = output.records("candidate_episode_link")[0]["payload"]
     assert "SAME_FACILITY" in link["reasons"]
 
@@ -404,6 +425,7 @@ def test_candidate_review_pagination_is_read_only(setup):
     for n, verb in enumerate(["attacked", "hit", "struck"]):
         capture(news, src, f"IRGC says tanker ALPHA {verb} in Hormuz", native=str(n))
     worker.run_once()
+    LinkerWorker(news, output).run_once()
     before = output.records()
     first = read_candidates(output.path, limit=1)
     assert first["more"] and len(first["links"]) == 1
@@ -414,7 +436,8 @@ def test_candidate_review_pagination_is_read_only(setup):
         read_candidates(output.path, limit=1001)
 
 
-def test_known_v1_upgrade_does_not_reprocess_history(setup):
+@pytest.mark.parametrize("legacy_version", ["fast-event-v1", "fast-event-v2"])
+def test_known_upgrade_does_not_reprocess_history(setup, legacy_version):
     from oilbot.forward import ATTRIBUTION, QUALIFIERS
     from oilbot.schema import digest
     cfg, news, output, worker = setup
@@ -422,9 +445,10 @@ def test_known_v1_upgrade_does_not_reprocess_history(setup):
     capture(news, cfg.sources[0], "IRGC says tanker hit in Hormuz")
     # Simulate an already-consumed v1 journal; keep its historical boundary.
     with output.transaction() as db:
-        output.set_cursor(db, "forward:policy", digest(["fast-event-v1", cfg.raw["assets"], RULES,
+        output.set_cursor(db, "forward:policy", digest([legacy_version, cfg.raw["assets"], RULES,
                                                          ATTRIBUTION.pattern, QUALIFIERS.pattern]))
-        output.set_cursor(db, "forward:seq:fast-event-v1", news.records("story_revision")[-1]["seq"])
+        output.set_cursor(db, "forward:seq:" + legacy_version, news.records("story_revision")[-1]["seq"])
+        db.execute("DELETE FROM cursors WHERE key='forward:seq'")
     upgraded = ForwardRecorder(news, output, cfg.raw["assets"])
     assert upgraded.epoch == worker.epoch
     assert upgraded.run_once()["processed"] == 0
@@ -440,14 +464,17 @@ def test_candidate_index_uses_bounded_time_window(setup):
     capture(news, src, "IRGC says tanker ALPHA attacked in Hormuz")
     worker.run_once()
     previous = output.records("fast_event")[0]["payload"]
+    linker = LinkerWorker(news, output)
+    linker.run_once()
     # Only derivative index timing is changed in this isolated query test.
     with output.transaction() as db:
-        db.execute("UPDATE forward_link_index SET received_ns=?", (epoch_ns(previous["received_at"]) - 7 * 3600 * 10**9,))
-        plan = db.execute("EXPLAIN QUERY PLAN SELECT * FROM forward_link_index WHERE event_type=? AND received_ns BETWEEN ? AND ? ORDER BY received_ns DESC,event_id LIMIT 501",
-                          ("TANKER_ATTACK", 0, 999999999999999999)).fetchall()
-        assert "forward_link_window" in " ".join(r["detail"] for r in plan)
+        db.execute("UPDATE linker_event_index SET received_ns=?", (epoch_ns(previous["received_at"]) - 7 * 3600 * 10**9,))
+        plan = db.execute("EXPLAIN QUERY PLAN SELECT * FROM linker_event_index WHERE policy_hash=? AND event_type=? AND received_ns BETWEEN ? AND ? ORDER BY received_ns DESC,event_id LIMIT 501",
+                          (linker.policy_hash, "TANKER_ATTACK", 0, 999999999999999999)).fetchall()
+        assert "linker_event_window" in " ".join(r["detail"] for r in plan)
     capture(news, src, "IRGC reports vessel ALPHA hit in Hormuz", native="later")
-    assert worker.run_once()["candidate_links"] == 0
+    worker.run_once()
+    assert linker.run_once()["candidate_links"] == 0
 
 
 def test_candidate_links_snapshot_is_causal(setup, tmp_path):
@@ -458,6 +485,7 @@ def test_candidate_links_snapshot_is_causal(setup, tmp_path):
     capture(news, src, "IRGC says tanker ALPHA was attacked near Hormuz", native="a")
     capture(news, src, "IRGC reports vessel ALPHA hit in Strait of Hormuz", native="b")
     worker.run_once()
+    LinkerWorker(news, output).run_once()
     _, reader, _ = load_manifest(export_manifest(cfg, tmp_path / "linked-snapshot"))
     links = [r for r in reader.records if r["kind"] == "candidate_episode_link"]
     assert len(links) == 1

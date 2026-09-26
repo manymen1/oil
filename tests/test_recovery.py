@@ -30,6 +30,57 @@ def state(news, oid):
         return dict(db.execute("SELECT * FROM parse_work WHERE observation_id=?", (oid,)).fetchone())
 
 
+def test_network_runs_before_recovery_and_old_parse_cannot_replace_new(setup, monkeypatch):
+    news, source, collector = setup
+    old = capture(news, source)
+    calls = []
+    def fetch(*args):
+        calls.append("network")
+        now = stamp()
+        return {"body": b'<rss><channel><item><guid>one</guid><title>New report</title></item></channel></rss>',
+                "url": source["url"], "status": 200, "content_type": "text/xml", "headers": {},
+                "started": now, "first_byte": now, "received": now, "delivery": "http"}
+    collector.fetcher = fetch
+    recover = collector.recover_unparsed
+    def recovery():
+        calls.append("recovery")
+        return recover()
+    monkeypatch.setattr(collector, "recover_unparsed", recovery)
+    collector.poll_once(force=True)
+    assert calls == ["network", "recovery"]
+    assert state(news, old)["state"] == "parsed"
+    assert [r["payload"]["title"] for r in news.records("story_revision")] == ["New report"]
+    late = news.records("late_story_parse")[0]
+    assert late["payload"]["title"] == "Tanker attacked"
+    assert late["payload"]["exclusion"] == "OLDER_OBSERVATION"
+    assert news.cursor("story:" + late["payload"]["story_id"])["revision_id"] == news.records("story_revision")[0]["id"]
+
+
+def test_duplicate_receipt_advances_recovery_watermark(setup):
+    news, source, collector = setup
+    first = capture(news, source)
+    item = NewsItem("one", source["url"], "Current", "Current")
+    news.accept_items(source, first, [item], {})
+    pending = capture(news, source)
+    latest = capture(news, source)
+    news.accept_items(source, latest, [item], {})
+    collector.recover_unparsed()
+    assert len(news.records("story_revision")) == 1
+    assert news.records("late_story_parse")[0]["payload"]["input_revision_ids"][0] == pending
+
+
+def test_older_unseen_guid_recovered_after_first_snapshot_stays_baseline(setup):
+    news, source, collector = setup
+    old = capture(news, source, "old")
+    new = capture(news, source, "new")
+    news.accept_items(source, new, [NewsItem("new", source["url"], "New snapshot", "New snapshot")], {})
+    collector.recover_unparsed()
+    recovered = news.records("story_revision")[-1]["payload"]
+    assert recovered["native_id"] == "old"
+    assert recovered["initial_snapshot"]
+    assert recovered["input_revision_ids"] == [old]
+
+
 def test_recovery_never_calls_full_journal_reader(setup, monkeypatch):
     news, source, collector = setup
     oid = capture(news, source)

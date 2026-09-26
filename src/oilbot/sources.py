@@ -215,8 +215,12 @@ class NewsCollector:
         self.store, self.sources = store, sources
         self.fetcher = fetcher or HTTPFetcher()
 
+    @staticmethod
+    def circuit_open(source, cursor):
+        circuit = cursor.get("circuit")
+        return bool(circuit and circuit.get("source_policy") == digest(source))
+
     def poll_once(self, *, force=False) -> dict:
-        self.recover_unparsed()
         now = utc_now()
         groups = {}
         summary = {"responses": 0, "revisions": 0, "errors": 0}
@@ -224,6 +228,8 @@ class NewsCollector:
             if not source["enabled"]:
                 continue
             cursor = self.store.cursor("source:" + source["id"], {})
+            if self.circuit_open(source, cursor):
+                continue
             if not force and cursor.get("next_poll") and instant(cursor["next_poll"]) > instant(now):
                 continue
             groups.setdefault(urlparse(source["url"]).hostname, []).append(source)
@@ -236,11 +242,12 @@ class NewsCollector:
                 results.append(self.fetch_source(source))
             return results
 
-        with ThreadPoolExecutor(max_workers=max(1, min(4, len(groups)))) as pool:
+        with ThreadPoolExecutor(max_workers=max(1, min(8, len(groups)))) as pool:
             for future in as_completed([pool.submit(domain_worker, group) for group in groups.values()]):
                 for result in future.result():
                     for key in summary:
                         summary[key] += result[key]
+        self.recover_unparsed()
         return summary
 
     def recover_unparsed(self, *, limit=8, migration_limit=500, time_budget_seconds=1):
@@ -299,6 +306,17 @@ class NewsCollector:
     def fetch_source(self, source: dict) -> dict:
         cursor = self.store.cursor("source:" + source["id"], {})
         result = {"responses": 0, "revisions": 0, "errors": 0}
+        if self.circuit_open(source, cursor):
+            return result  # Even force/direct calls must respect access gates.
+        if cursor.get("circuit"):
+            circuit = cursor["circuit"]
+            with self.store.transaction() as db:
+                self.store.append("source_circuit_transition", {"source_id": source["id"], "state": "POLICY_CHANGED",
+                    "source_policy": digest(source), "previous_source_policy": circuit["source_policy"],
+                    "input_revision_ids": [circuit["record_id"]]}, db=db)
+                self.store.set_cursor(db, "source:" + source["id"], {})
+        if cursor.get("source_policy") != digest(source):
+            cursor = {}  # Changed registrations must not reuse old validators.
         response = None
         observation_id = None
         health = "NETWORK_FAILURE"
@@ -321,7 +339,8 @@ class NewsCollector:
                 health = "OK" if items else "EMPTY"
             next_cursor = {"etag": response["headers"].get("ETag", cursor.get("etag")),
                            "last_modified": response["headers"].get("Last-Modified", cursor.get("last_modified")),
-                           "failures": 0, "next_poll": (instant(utc_now()) + timedelta(seconds=source["poll_seconds"])).isoformat()}
+                           "failures": 0, "parse_failures": 0, "source_policy": digest(source),
+                           "next_poll": (instant(utc_now()) + timedelta(seconds=source["poll_seconds"])).isoformat()}
             # Listings are discovery observations. They must not repeatedly replace
             # a full article at the same URL with its shorter headline on every poll.
             accepted = [] if source["adapter"] == "adnoc" else items
@@ -338,9 +357,19 @@ class NewsCollector:
             delay = min(900, source["poll_seconds"] * 2 ** min(failures, 10))
             if response:
                 delay = max(delay, retry_delay(response["headers"].get("Retry-After"), utc_now()))
+            parsing_failed = isinstance(exc, ValueError) and response is not None and response["status"] == 200
+            parse_failures = cursor.get("parse_failures", 0) + 1 if parsing_failed else 0
+            open_reason = "ACCESS_DENIED" if health == "ACCESS_DENIED" else (
+                "REPEATED_PARSE_FAILURE" if parse_failures >= 3 else None)
             with self.store.transaction() as db:
-                self.store.set_cursor(db, "source:" + source["id"], {**cursor, "failures": failures,
-                    "next_poll": (instant(utc_now()) + timedelta(seconds=delay)).isoformat()})
+                next_cursor = {**cursor, "failures": failures, "parse_failures": parse_failures,
+                    "source_policy": digest(source), "next_poll": (instant(utc_now()) + timedelta(seconds=delay)).isoformat()}
+                if open_reason:
+                    circuit = {"reason": open_reason, "opened_at": utc_now(), "source_policy": digest(source)}
+                    rid = self.store.append("source_circuit_transition", {"source_id": source["id"],
+                        "state": "OPEN", **circuit, "input_revision_ids": [observation_id] if observation_id else []}, db=db)
+                    next_cursor["circuit"] = {**circuit, "record_id": rid}
+                self.store.set_cursor(db, "source:" + source["id"], next_cursor)
         if result["errors"] and health in {"OK", "EMPTY", "UNCHANGED"}:
             health = "OK_DETAIL_INCOMPLETE"
         health_record = {"source_id": source["id"], "status": health, "scope": "collection",

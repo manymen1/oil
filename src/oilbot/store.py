@@ -227,22 +227,45 @@ class Journal:
         observation = self.get(observation_id)
         if observation is None:
             raise ValueError("missing raw observation")
-        at = utc_now()
         output = []
         with self.transaction() as db:
+            at = utc_now()
             # Scheduling/HTTP validators can exist after an error, empty feed or
             # 304. Only a previously captured story establishes a content baseline.
-            initial_snapshot = db.execute(
-                "SELECT 1 FROM records WHERE kind='story_revision' AND json_extract(payload,'$.source_id')=? LIMIT 1",
-                (source["id"],)).fetchone() is None
+            baseline = db.execute(
+                "SELECT payload FROM records WHERE kind='story_revision' AND json_extract(payload,'$.source_id')=? ORDER BY seq LIMIT 1",
+                (source["id"],)).fetchone()
+            initial_snapshot = baseline is None
+            if baseline:
+                baseline_inputs = json.loads(baseline[0])["input_revision_ids"]
+                baseline_seq = max(db.execute("SELECT seq FROM records WHERE id=?", (rid,)).fetchone()[0]
+                                   for rid in baseline_inputs)
+                # Recovery may parse the first response after a newer snapshot.
+                # An unseen old GUID is still baseline content, not a fresh event.
+                initial_snapshot = observation["seq"] <= baseline_seq
             for item in items:
                 story = digest([source["id"], item.native_id])
                 content = digest(to_dict(item))
                 previous = db.execute("SELECT value FROM cursors WHERE key=?", ("story:" + story,)).fetchone()
                 previous = json.loads(previous[0]) if previous else None
+                if previous:
+                    observed_seq = previous.get("observation_seq")
+                    if observed_seq is None:  # Legacy story cursor.
+                        old = json.loads(db.execute("SELECT payload FROM records WHERE id=?", (previous["revision_id"],)).fetchone()[0])
+                        observed_seq = max(db.execute("SELECT seq FROM records WHERE id=?", (rid,)).fetchone()[0]
+                                           for rid in old["input_revision_ids"])
+                    if observation["seq"] < observed_seq:
+                        # Late recovery preserves parsed content but must not
+                        # supersede a more recently received version.
+                        self.append("late_story_parse", {**to_dict(item), "source_id": source["id"],
+                            "story_id": story, "content_hash": content, "exclusion": "OLDER_OBSERVATION",
+                            "local_received_at": observation["payload"]["received"]["utc"],
+                            "input_revision_ids": [observation_id, previous["revision_id"]]}, db=db)
+                        continue
                 if previous and previous["content_hash"] == content:
                     self.append("story_receipt", {"input_revision_ids": [observation_id, previous["revision_id"]],
                                                   "source_id": source["id"]}, db=db)
+                    self.set_cursor(db, "story:" + story, {**previous, "observation_seq": observation["seq"]})
                     continue
                 rid = digest([story, content, previous["revision_id"] if previous else None])
                 payload = {**to_dict(item), "source_id": source["id"], "source_role": source["role"],
@@ -262,7 +285,8 @@ class Journal:
                            "claim_origin": None,  # Publication/wire attribution is not an original actor claim.
                            "model_processing": source["rights"]["model_processing"]}
                 self.append("story_revision", payload, available_at=at, record_id=rid, db=db)
-                self.set_cursor(db, "story:" + story, {"content_hash": content, "revision_id": rid, "revision": payload["revision"]})
+                self.set_cursor(db, "story:" + story, {"content_hash": content, "revision_id": rid,
+                    "revision": payload["revision"], "observation_seq": observation["seq"]})
                 output.append(rid)
             self.append("parse_receipt", {"input_revision_ids": [observation_id], "revision_ids": output,
                                           "transform": "source-v1"}, db=db)

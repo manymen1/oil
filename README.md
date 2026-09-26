@@ -21,14 +21,21 @@ python scripts/supervisor.py --config configs/forward.yaml --duration 45
 oilbot status --config configs/forward.yaml
 oilbot collection-health --config configs/forward.yaml
 oilbot forward-candidates --config configs/forward.yaml --limit 20
+oilbot forward-quality --config configs/forward.yaml
 ```
 
 The bounded smoke run stops itself. Omit `--duration 45` for a foreground
 continuous run; Ctrl-C stops all workers. No service is installed automatically.
-The forward supervisor runs only `news` and `forward`. It never calls a model,
+The forward supervisor runs `news`, `forward`, and the independent `linker`. It never calls a model,
 starts a market worker, or loads market fixtures. Indexed recovery avoids repeated
 whole-journal scans. Cross-headline candidate links require review and never
 merge incidents or invent confirmation.
+Corrections create evidence-state history. Human link decisions are append-only;
+`forward-episodes` derives an as-of mapping without rewriting captured events.
+`forward-quality` reports dataset counts/rates, lag samples, exclusions, source
+health, recovery work, clock diagnostics and storage growth without fetching news.
+Access denials and repeated primary-feed parse failures open persistent circuits
+for operator review; forced polls and restarts do not bypass them.
 See [the forward recorder and roadmap](docs/forward-collection.md).
 
 ## Source qualification and collection health

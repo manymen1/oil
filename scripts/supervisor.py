@@ -18,6 +18,11 @@ from oilbot.config import load_config
 from oilbot.store import component_lock
 
 
+def restart_delay(failures, uptime):
+    failures = 1 if uptime >= 600 else failures + 1
+    return failures, min(300, 5 * 2 ** min(failures, 6))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default=str(REPO / "configs/forward.yaml"))
@@ -28,6 +33,7 @@ def main():
     signal.signal(signal.SIGTERM, lambda *_: stopped.set())
     signal.signal(signal.SIGINT, lambda *_: stopped.set())
     processes, logs, restarts, next_start = {}, {}, {}, {}
+    child_started = {}
     started = time.monotonic()
     with component_lock(config.root, "supervisor"):
         try:
@@ -36,8 +42,9 @@ def main():
                 # Establish the persistent experiment boundary before news starts.
                 from oilbot.forward import ForwardRecorder
                 from oilbot.store import Journal
-                ForwardRecorder(Journal(config.db("news")), Journal(config.db("forward")), config.raw["assets"])
-            for component in (("forward", "news") if forward else ("news", "market", "analysis")):
+                ForwardRecorder(Journal(config.db("news")), Journal(config.db("forward")), config.raw["assets"],
+                    asset_registry_version=config.raw["asset_registry_version"], source_registry_version=config.raw["registry_version"])
+            for component in (("forward", "linker", "news") if forward else ("news", "market", "analysis")):
                 logs[component] = (config.root / f"{component}.log").open("a")
                 restarts[component], next_start[component] = 0, 0
             while not stopped.is_set():
@@ -48,8 +55,8 @@ def main():
                     if child is not None and child.poll() is None:
                         continue
                     if child is not None:
-                        restarts[component] += 1
-                        next_start[component] = time.monotonic() + min(300, 5 * 2 ** min(restarts[component], 6))
+                        restarts[component], delay = restart_delay(restarts[component], time.monotonic() - child_started[component])
+                        next_start[component] = time.monotonic() + delay
                         print(f"{component} exited {child.returncode}; restart {restarts[component]}", flush=True)
                         del processes[component]
                     if time.monotonic() < next_start[component]:
@@ -58,6 +65,7 @@ def main():
                         [sys.executable, "-m", "oilbot", "record", "--component", component,
                          "--config", str(config.path)], cwd=REPO, stdout=logs[component], stderr=subprocess.STDOUT,
                         start_new_session=True)
+                    child_started[component] = time.monotonic()
                     print(f"started {component} pid={processes[component].pid}", flush=True)
                 stopped.wait(1)
         finally:
