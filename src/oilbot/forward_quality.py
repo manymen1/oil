@@ -144,6 +144,9 @@ def forward_quality(config, *, now=None, window_seconds=86400):
             "exclusions": dict(excluded), "excluded_initial_snapshots": excluded["INITIAL_SNAPSHOT"],
             "late_story_parses": sum(r["kind"] == "late_story_parse" and recent(r) for r in news),
             "parser_reinterpretations": sum(bool(r["payload"].get("parser_reinterpretation")) for r in window_stories),
+            "claim_origin_bases": dict(Counter(r["payload"].get("claim_origin_basis", "LEGACY_UNMODELED") for r in window_events)),
+            "first_party_assessment_reasons": dict(Counter(r["payload"]["first_party_assessment"]["reason"]
+                for r in window_events if r["payload"].get("first_party_assessment"))),
             "evidence_transitions": dict(Counter(r["payload"]["state"] for r in forward if r["kind"] == "forward_evidence_transition" and recent(r))),
             "publication_to_receipt": lag_summary(live_stories, lambda r: r["payload"].get("local_received_at"), lambda r: r["payload"].get("published_at")),
             "receipt_to_classification": lag_summary(window_events, lambda r: r["available_at"], lambda r: r["payload"].get("received_at")),

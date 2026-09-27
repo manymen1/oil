@@ -5,6 +5,51 @@ pipeline: forward
 broker_execution: disabled
 registry_version: forward-sources-v1
 asset_registry_version: gulf-assets-v1
+# Identity/scope reviews only: no capture/model rights, access or factual confirmation granted.
+# Bound to exact source registration hashes; expiry or registry changes fail closed.
+first_party_reviews:
+  - source_id: aramco
+    claim_origin: aramco
+    status: verified
+    source_policy_hash: 035a85c0a2e38ba7872a35c9de879568679e5316eca2cfee2bd4ef817f07a72e
+    reviewed_at: '2026-09-27T03:08:39.014143+00:00'
+    expires_at: '2026-10-04T03:08:39.014143+00:00'
+    reviewer: codex-primary-publication-identity-and-narrow-scope-review
+    evidence:
+      - https://www.aramco.com/en/what-we-do/operations/ports-and-terminals
+      - Official page links the configured RSS endpoint and identifies Ras Tanura among Aramco terminals; see docs/first-party-attribution.md.
+    scope: own_operations
+    item_path_prefixes: [/en/news-media/news/]
+    asset_ids: [ras_tanura]
+    asset_owner: Saudi Aramco
+  - source_id: ofac
+    claim_origin: ofac
+    status: verified
+    source_policy_hash: d1c4d9e35d2ba0387e5b3de15d61c67eef9d0800de22f914f08d9c25314b249f
+    reviewed_at: '2026-09-27T03:08:39.014143+00:00'
+    expires_at: '2026-10-04T03:08:39.014143+00:00'
+    reviewer: codex-primary-publication-identity-and-narrow-scope-review
+    evidence:
+      - https://ofac.treasury.gov/faqs/1
+      - https://ofac.treasury.gov/recent-actions
+    scope: own_sanctions_actions
+    item_path_prefixes: [/recent-actions/]
+    asset_ids: []
+    asset_owner: null
+  - source_id: centcom
+    claim_origin: centcom
+    status: pending
+    source_policy_hash: 1f075cbd3c0fef62386d83e58e9cf853d71256ed5fa09f8ce6f58343137c8fc0
+    reviewed_at: '2026-09-27T03:08:39.014143+00:00'
+    expires_at: '2026-10-04T03:08:39.014143+00:00'
+    reviewer: codex-primary-publication-identity-and-narrow-scope-review
+    evidence:
+      - https://www.centcom.mil/ABOUT-US/mission-vision/
+      - Direct page fetch returned HTTP 403; cached search evidence alone was not used to activate first-party inference.
+    scope: own_military_statements
+    item_path_prefixes: [/MEDIA/PUBLIC-RELEASES/Article/]
+    asset_ids: []
+    asset_owner: null
 storage:
   root: ../data/forward
   quote_flush_seconds: 1

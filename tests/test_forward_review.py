@@ -137,6 +137,90 @@ def test_revision_generates_new_active_evidence_without_rewriting_old(setup):
     assert episode_map(output.path)["evidence_states"] == {first["id"]: "DOCUMENT_SUPERSEDED", events[1]["id"]: "ACTIVE"}
 
 
+@pytest.mark.parametrize("status,state", [("correction", "CORRECTED"), ("withdrawal", "WITHDRAWN"), ("deleted", "DELETED")])
+@pytest.mark.parametrize("headline,new_events", [("Further update pending", 0), ("IRGC says tanker ALPHA hit in Hormuz", 1)])
+def test_ordinary_update_cannot_weaken_strong_evidence_state(setup, tmp_path, status, state, headline, new_events):
+    from oilbot.forward import ForwardRecorder
+    cfg, news, output, worker = setup
+    src = cfg.sources[0]
+    warm(news, src)
+    capture(news, src, "Tanker ALPHA hit in Hormuz")
+    worker.run_once()
+    first = output.records("fast_event")[0]
+    active_at = output.records("forward_evidence_transition")[-1]["available_at"]
+    capture(news, src, "Previous report revised", status=status)
+    worker.run_once()
+    strong = output.records("forward_evidence_transition")[-1]
+    assert strong["payload"]["state"] == state
+    capture(news, src, headline)
+    # Restart must use the journal state, not a process-local terminal flag.
+    worker = ForwardRecorder(news, output, cfg.raw["assets"])
+    assert worker.run_once()["events"] == new_events
+    transitions = [r for r in output.records("forward_evidence_transition") if r["payload"]["event_id"] == first["id"]]
+    assert transitions[-1] == strong
+    assert episode_map(output.path)["evidence_states"][first["id"]] == state
+    assert episode_map(output.path, through=active_at)["evidence_states"][first["id"]] == "ACTIVE"
+    assert episode_map(output.path, through=strong["available_at"])["evidence_states"][first["id"]] == state
+    assert output.get(first["id"]) == first
+    if new_events:
+        newer = output.records("fast_event")[-1]
+        assert newer["id"] != first["id"]
+        assert episode_map(output.path)["evidence_states"][newer["id"]] == "ACTIVE"
+    # A second non-event update must not erase the original strong state either.
+    capture(news, src, "Another update pending")
+    worker.run_once()
+    assert episode_map(output.path)["evidence_states"][first["id"]] == state
+    assert worker.run_once()["processed"] == 0
+    manifest = export_manifest(cfg, tmp_path / "strong-state-snapshot")
+    load_manifest(manifest)
+    expected = episode_map(output.path)
+    assert episode_map(manifest.parent / "forward.sqlite3", through=expected["as_of"]) == expected
+
+
+def test_explicit_withdrawal_still_follows_correction_across_ordinary_update(setup):
+    cfg, news, output, worker = setup
+    src = cfg.sources[0]
+    warm(news, src)
+    capture(news, src, "Tanker attacked in Hormuz")
+    worker.run_once()
+    event = output.records("fast_event")[0]
+    for status, title in [("correction", "Corrected report"), ("update", "Update pending"), ("withdrawal", "Withdrawn report")]:
+        capture(news, src, title, status=status)
+        worker.run_once()
+    states = [r["payload"]["state"] for r in output.records("forward_evidence_transition") if r["payload"]["event_id"] == event["id"]]
+    assert states == ["ACTIVE", "CORRECTED", "WITHDRAWN"]
+
+
+def test_evidence_policy_upgrade_preserves_cursor_epoch_and_history(setup, monkeypatch):
+    import oilbot.forward as forward
+    cfg, news, output, worker = setup
+    src = cfg.sources[0]
+    with monkeypatch.context() as m:
+        m.setattr(forward, "EVIDENCE_POLICY_VERSION", "test-legacy-evidence-policy")
+        m.setattr(forward, "STRONG_EVIDENCE_STATES", frozenset())
+        legacy = forward.ForwardRecorder(news, output, cfg.raw["assets"])
+        warm(news, src)
+        capture(news, src, "Tanker hit in Hormuz")
+        legacy.run_once()
+        capture(news, src, "Withdrawn report", status="withdrawal")
+        legacy.run_once()
+    old_events = output.records("fast_event")
+    old_transitions = output.records("forward_evidence_transition")
+    consumed = output.cursor(forward.CURSOR_KEY)
+    upgraded = forward.ForwardRecorder(news, output, cfg.raw["assets"])
+    assert upgraded.epoch == legacy.epoch
+    assert output.cursor(forward.CURSOR_KEY) == consumed
+    assert upgraded.run_once()["processed"] == 0
+    assert output.records("fast_event") == old_events
+    assert output.records("forward_evidence_transition") == old_transitions
+    policy = output.records("forward_policy_revision")[-1]["payload"]
+    assert policy["evidence_policy_version"] == forward.EVIDENCE_POLICY_VERSION
+    assert not policy["historical_reclassification"]
+    capture(news, src, "Further update pending")
+    upgraded.run_once()
+    assert episode_map(output.path)["evidence_states"][old_events[0]["id"]] == "WITHDRAWN"
+
+
 def test_review_validation_and_linker_transaction_rollback(setup, monkeypatch):
     cfg, news, output, worker = setup
     links = linked(setup)

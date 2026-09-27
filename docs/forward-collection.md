@@ -159,6 +159,16 @@ states. A corrected version is excluded from fresh event generation pending
 review. Headline denials still require review; automatic cross-source
 `CONTESTED` transitions are not implemented. Feed disappearance is never deletion.
 
+The versioned `forward-evidence-v2` policy prevents ordinary document updates from
+replacing `CORRECTED`, `WITHDRAWN`, `DELETED` (or a future `CONTESTED` state) with
+`DOCUMENT_SUPERSEDED`. The document revision and story/event lineage are still
+recorded. A later explicit source correction/withdrawal/deletion can append its
+own transition; a routine update cannot retract that disposition. If the update
+contains a new event candidate, that new event receives its own `ACTIVE` evidence
+record while the old event retains its stronger state. This is not reinstatement
+of the old event or confirmation of the new claim. Historical transitions are not
+rewritten or repaired automatically, and as-of views retain their original history.
+
 The English headline-only classifier covers the initial 21 categories. It returns
 literal match spans, attribution candidates, and qualifiers. Bodies remain
 archived but are not classified. Coverage is intentionally incomplete; translation
@@ -299,9 +309,10 @@ Do not copy a live SQLite main file without its WAL; use the snapshot command.
 1. Completed integrity core: incremental recovery, independent review-only
    linker, literal slots, evidence lineage, append-only link decisions, derived
    as-of mappings, effective-dated policies and snapshot provenance.
-2. First-party identity: bind verified source identity to its authority/asset
-   scope so an operator's own operational report need not say "operator says".
-   Publication on an official domain alone must not prove a contested claim.
+2. Scoped first-party attribution is implemented in fast-event-v5: narrow dated
+   Aramco/OFAC reviews are configured; CENTCOM remains pending. See
+   [the gates, evidence and limitations](first-party-attribution.md). Extend scopes
+   only with reviewed identity/subject evidence, never publisher-wide trust scores.
 3. Extend revision semantics to carefully reviewed cross-source contradictions
    and denials; do not infer these from publisher identity or feed omission.
 4. Expand sources in the order above, testing endpoint/parser behavior and

@@ -12,8 +12,11 @@ from .clock import instant, utc_now
 from .schema import digest
 from .store import Journal
 from .entities import ENTITY_VERSION, literal_slots
+from .first_party import FirstPartyResolver, VERSION as FIRST_PARTY_VERSION, SCOPES, SUBJECTS
 
-VERSION = "fast-event-v4"
+VERSION = "fast-event-v5"
+EVIDENCE_POLICY_VERSION = "forward-evidence-v2"
+STRONG_EVIDENCE_STATES = frozenset({"CORRECTED", "WITHDRAWN", "DELETED", "CONTESTED"})
 CURSOR_KEY = "forward:seq"
 # Narrow headline patterns intentionally trade recall for inspectability. Bodies
 # are retained in the news journal, but historical context is not classified.
@@ -66,6 +69,7 @@ def classify(story: dict, assets: list[dict]) -> list[dict]:
         result.append({
             "event_type": event_type, "publisher": story["source_id"],
             "claim_origin": claim_origin, **slots,
+            "claim_origin_basis": "LITERAL_ATTRIBUTION" if claim_origin else "UNKNOWN",
             "syndication_origin": story.get("origin") if story.get("wire_provenance_version") else None,
             "source_attributions": story.get("source_attributions", []),
             "wire_evidence": story.get("wire_evidence", []),
@@ -83,15 +87,23 @@ def classify(story: dict, assets: list[dict]) -> list[dict]:
 
 class ForwardRecorder:
     def __init__(self, news: Journal, output: Journal, assets: list[dict], *,
-                 asset_registry_version="unversioned", source_registry_version="unversioned"):
+                 asset_registry_version="unversioned", source_registry_version="unversioned",
+                 sources=(), first_party_reviews=()):
         self.news, self.output, self.assets = news, output, assets
+        self.first_party = FirstPartyResolver(sources, first_party_reviews, assets)
         policy = {"classifier_version": VERSION, "entity_version": ENTITY_VERSION,
+                  "first_party_version": FIRST_PARTY_VERSION, "first_party_reviews": first_party_reviews,
+                  "first_party_sources": sources, "first_party_scopes": {k: sorted(v) for k, v in SCOPES.items()},
+                  "first_party_subjects": SUBJECTS,
+                  "evidence_policy_version": EVIDENCE_POLICY_VERSION,
+                  "document_update_preserves_states": sorted(STRONG_EVIDENCE_STATES),
                   "rules": RULES, "attribution_pattern": ATTRIBUTION.pattern,
                   "qualifier_pattern": QUALIFIERS.pattern, "official_origins": sorted(OFFICIAL_ORIGINS),
                   "assets": assets, "asset_registry_version": asset_registry_version,
                   "source_registry_version": source_registry_version}
         self.policy_hash = digest(policy)
         self.metadata = {"classifier_version": VERSION, "classifier_policy_hash": self.policy_hash,
+                         "evidence_policy_version": EVIDENCE_POLICY_VERSION,
                          "asset_registry_version": asset_registry_version, "asset_registry_hash": digest(assets),
                          "source_registry_version": source_registry_version}
         with output.transaction() as db:
@@ -180,6 +192,11 @@ class ForwardRecorder:
         old = db.execute("SELECT id,payload FROM records WHERE kind='forward_evidence_transition' AND json_extract(payload,'$.event_id')=? ORDER BY seq DESC LIMIT 1",
                          (event_id,)).fetchone()
         previous_state = json.loads(old["payload"])["state"] if old else ("LEGACY_UNMODELED" if state != "ACTIVE" else None)
+        # Lineage carries prior events across non-event revisions so explicit
+        # withdrawals/corrections can still find them. That does not authorize a
+        # routine document update to erase a stronger evidence disposition.
+        if state == "DOCUMENT_SUPERSEDED" and previous_state in STRONG_EVIDENCE_STATES:
+            return
         self.output.append("forward_evidence_transition", {
             "event_id": event_id, "story_revision_id": row["id"], "previous_state": previous_state,
             "supersedes_transition_id": old["id"] if old else None,
@@ -205,6 +222,10 @@ class ForwardRecorder:
             exclusion = self._exclusion(row)
             events = [] if exclusion else classify(story, self.assets)
             processed_at = utc_now()
+            if events:
+                observations = [self.news.get(rid) for rid in story["input_revision_ids"]]
+                for event in events:
+                    self.first_party.apply(event, story, observations, at=processed_at, event_count=len(events))
             with self.output.transaction() as db:
                 policy = json.loads(db.execute("SELECT value FROM cursors WHERE key='forward:policy'").fetchone()[0])
                 policy_record = json.loads(db.execute("SELECT value FROM cursors WHERE key='forward:policy_record'").fetchone()[0])

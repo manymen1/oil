@@ -8,7 +8,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-from .clock import seconds, stamp, utc_now
+from .clock import instant, seconds, stamp, utc_now
 from .config import load_config
 from .extract import AnalysisWorker, CodexExtractor
 from .incidents import IncidentReducer
@@ -23,6 +23,8 @@ from .store import Journal, component_lock
 
 def preflight(config):
     forward = config.raw.get("pipeline") == "forward"
+    now = instant(utc_now())
+    sources = {s["id"]: s for s in config.sources}
     return {"mode": "observe", "broker_execution": "disabled", "pilot_ready": True,
             "economic_evaluation": "unavailable", "storage": str(config.root),
             "codex_available": bool(shutil.which(config.extraction.get("binary", "codex"))),
@@ -33,6 +35,9 @@ def preflight(config):
             "deferred": ["GITHUB_CI", "LIVE_MARKET_DATA", "STRATEGY"] if forward else [],
             "pipeline": config.raw.get("pipeline", "reviewed"),
             "forward_recorder_ready": forward,
+            "first_party_reviews": [{"source": r["source_id"], "status": r["status"], "scope": r["scope"],
+                "expires_at": r["expires_at"], "registration_matches": digest(sources[r["source_id"]]) == r["source_policy_hash"],
+                "time_valid": instant(r["reviewed_at"]) <= now < instant(r["expires_at"])} for r in config.raw.get("first_party_reviews", [])],
             "planned_market_provider": config.raw["market"].get("planned_provider"),
             "live_market_ready": False,
             "next": "Accumulate auditable forward news and review candidate incident links."}
@@ -82,7 +87,8 @@ def record(config, component: str, *, once: bool, fixture: Path | None, stop=Non
         elif component == "forward":
             from .forward import ForwardRecorder
             worker = ForwardRecorder(Journal(config.db("news")), Journal(config.db("forward")), config.raw["assets"],
-                asset_registry_version=config.raw["asset_registry_version"], source_registry_version=config.raw["registry_version"])
+                asset_registry_version=config.raw["asset_registry_version"], source_registry_version=config.raw["registry_version"],
+                sources=config.sources, first_party_reviews=config.raw.get("first_party_reviews", []))
             work = worker.run_once
         elif component == "linker":
             from .linking import LinkerWorker

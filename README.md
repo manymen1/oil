@@ -34,6 +34,8 @@ Corrections create evidence-state history. Human link decisions are append-only;
 `forward-episodes` derives an as-of mapping without rewriting captured events.
 `propose-forward-link` lets a reviewer nominate relations the linker missed;
 approval is a separate step. Wire citations are distinct from syndication credits.
+Scoped [first-party attribution](docs/first-party-attribution.md) can identify a
+reviewed publisher as claimant without treating its claim as confirmed.
 `forward-quality` reports dataset counts/rates, lag samples, exclusions, source
 health, recovery work, clock diagnostics and storage growth without fetching news.
 Access denials and repeated primary-feed parse failures open persistent circuits

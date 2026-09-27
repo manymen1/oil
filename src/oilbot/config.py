@@ -62,6 +62,8 @@ def load_config(path: str | Path) -> OilConfig:
         if source["rights"].get("model_processing") not in {"permitted", "pending", "prohibited"}:
             raise ValueError("explicit model processing rights required")
     root = Path(raw["storage"]["root"])
+    from .first_party import validate_reviews
+    validate_reviews(raw.get("first_party_reviews", []), raw["sources"], raw["assets"])
     if not root.is_absolute():
         root = path.parent / root
     return OilConfig(path, root.resolve(), raw)
