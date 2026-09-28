@@ -41,6 +41,8 @@ health, recovery work, clock diagnostics and storage growth without fetching new
 Access denials and repeated primary-feed parse failures open persistent circuits
 for operator review; forced polls and restarts do not bypass them.
 See [the forward recorder and roadmap](docs/forward-collection.md).
+Use the [offline collector audit pack](docs/collector-audit.md) to preserve a
+snapshot, verify same-host replay and prepare a stratified coverage-review sample.
 
 ## Source qualification and collection health
 
