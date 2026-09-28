@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from .clock import instant
 from .schema import digest
 
-VERSION = "first-party-v1"
+VERSION = "first-party-v2"
 SCOPES = {
     "own_operations": {"PRODUCTION_SUSPENDED", "PRODUCTION_RESTORED", "EXPORT_TERMINAL_CLOSED",
                        "EXPORT_TERMINAL_REOPENED", "PIPELINE_OUTAGE", "PIPELINE_RESTORED"},
@@ -117,6 +117,8 @@ class FirstPartyResolver:
             return reject("REPORTED_SPEECH_OR_QUOTE")
         if event["qualifier"]:
             return reject("QUALIFIED_OR_UNCERTAIN_HEADLINE")
+        if event.get("assertion", "asserted") != "asserted":
+            return reject("NONASSERTED_HEADLINE")
         scope = review["scope"]
         if event["event_type"] not in SCOPES[scope]:
             return reject("EVENT_OUTSIDE_AUTHORITY_SCOPE")

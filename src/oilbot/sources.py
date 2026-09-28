@@ -87,6 +87,17 @@ class RSSAdapter:
         return result
 
 
+def official_detail(kind: str, url: str) -> bool:
+    path = urlparse(url).path
+    return bool(kind == "ofac" and re.fullmatch(r"/recent-actions/\d{8}(?:-\d+)?/?", path)
+                or kind == "centcom" and re.search(r"/MEDIA/(?:PUBLIC|PRESS)-RELEASES/Article/\d+/", path, re.I))
+
+
+def detail_enabled(source: dict) -> bool:
+    return source["adapter"] in {"adnoc", "fujairah"} or (
+        source["adapter"] in {"centcom", "ofac"} and source.get("capture_details") is True)
+
+
 class ListingAdapter:
     def __init__(self, kind: str):
         self.kind = kind
@@ -101,6 +112,23 @@ class ListingAdapter:
         page = soup.get_text(" ", strip=True)
         if re.search(r"checking your browser|attention required|access denied|just a moment", page, re.I):
             raise ParseFailure("ACCESS_CHALLENGE")
+        if official_detail(self.kind, url):
+            # Fail closed: navigation and related releases are not article evidence.
+            selector = "article .field--name-field-body .field__item, article .field--name-body" if self.kind == "ofac" else ".body, .ArticleBody, .article-body"
+            main = soup.select_one(selector)
+            title = soup.find("h1")
+            if main is None or title is None:
+                raise ParseFailure("INCOMPLETE_DETAIL: missing release body/title")
+            for node in main.select("nav, footer, header, aside, .related-content"):
+                node.decompose()
+            body = main.get_text(" ", strip=True)
+            heading = title.get_text(" ", strip=True)
+            if len(body) < 40 or not heading:
+                raise ParseFailure("INCOMPLETE_DETAIL: empty release")
+            # Never invent midnight for a date-only page or use a body effective date.
+            date = soup.select_one('meta[property="article:published_time"]')
+            return [NewsItem(url, url, heading, heading + "\n" + body,
+                             published(date.get("content")) if date else None)]
         is_detail = self.kind == "adnoc" and re.search(r"/press-releases/\d{4}/", url)
         if is_detail:
             main = soup.find("article") or soup.find("main") or soup
@@ -117,8 +145,7 @@ class ListingAdapter:
                 self.kind == "adnoc" and bool(re.search(r"/press-releases/\d{4}/", href))
                 or self.kind == "fujairah" and (".pdf" in href.lower() or bool(re.search(r"\bNTM\s*\d", label, re.I)))
                 or self.kind == "ukmto" and bool(re.search(r"\b(?:WARNING|ADVISORY|UPDATE)\s+\d", label, re.I))
-                or self.kind == "ofac" and bool(re.fullmatch(r"/recent-actions/\d{8}(?:-\d+)?", urlparse(href).path))
-                or self.kind == "centcom" and bool(re.search(r"/MEDIA/PUBLIC-RELEASES/Article/\d+/", urlparse(href).path, re.I))
+                or official_detail(self.kind, href)
             )
             if not match or href in seen or not label:
                 continue
@@ -283,6 +310,8 @@ class NewsCollector:
                         raise ParseFailure("UNREGISTERED_ITEM_URL")
                     if source["adapter"] == "adnoc" and not re.search(r"/press-releases/\d{4}/", payload["url"]):
                         items = []
+                    if source.get("capture_details") and source["adapter"] in {"centcom", "ofac"} and not official_detail(source["adapter"], payload["url"]):
+                        items = []
                 self.store.accept_items(source, row["id"], items, self.store.cursor("source:" + source["id"], {}))
                 state = "RECOVERED_UNPARSED_RESPONSE"
             except (ValueError, subprocess.SubprocessError) as exc:
@@ -343,12 +372,14 @@ class NewsCollector:
                            "next_poll": (instant(utc_now()) + timedelta(seconds=source["poll_seconds"])).isoformat()}
             # Listings are discovery observations. They must not repeatedly replace
             # a full article at the same URL with its shorter headline on every poll.
-            accepted = [] if source["adapter"] == "adnoc" else items
+            discovery_only = source["adapter"] == "adnoc" or (
+                source["adapter"] in {"centcom", "ofac"} and source.get("capture_details") is True)
+            accepted = [] if discovery_only else items
             result["revisions"] = len(self.store.accept_items(source, observation_id, accepted, next_cursor))
             # Follow only registered listing links, never arbitrary URLs in prose.
             # Detail fetches happen after the listing commit. Their own failures
             # cannot discard or delay the already captured listing.
-            if source["adapter"] in {"adnoc", "fujairah"}:
+            if detail_enabled(source):
                 self.fetch_details(source, items, result)
         except (requests.RequestException, ValueError) as exc:
             result["errors"] = 1
@@ -390,11 +421,18 @@ class NewsCollector:
             url = links[(offset + index) % len(links)]
             detail_key = "detail:" + url
             detail_cursor = self.store.cursor(detail_key, {})
+            if detail_cursor.get("access_denied_policy") == digest(source):
+                result["errors"] += 1
+                continue  # Never repeatedly retry a denied detail URL.
             oid = None
             try:
                 response = {**self.fetcher(source, url, detail_cursor), "requested_url": url}
                 oid = self.store.capture(source, response)
                 result["responses"] += 1
+                if response["status"] in {401, 403}:
+                    with self.store.transaction() as db:
+                        self.store.set_cursor(db, detail_key, {"access_denied_policy": digest(source),
+                                                              "observation_id": oid})
                 if response["status"] == 304:
                     self.store.accept_items(source, oid, [], self.store.cursor("source:" + source["id"], {}))
                     continue

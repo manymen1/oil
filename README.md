@@ -41,6 +41,12 @@ health, recovery work, clock diagnostics and storage growth without fetching new
 Access denials and repeated primary-feed parse failures open persistent circuits
 for operator review; forced polls and restarts do not bypass them.
 See [the forward recorder and roadmap](docs/forward-collection.md).
+The [offline story-review CLI](docs/story-review.md) supports revision-bound labels,
+missed-event annotations and separately dated coverage diagnostics without rewriting capture history.
+The [forward economic research protocol](docs/forward-economic-research.md) defines
+reviewed disruption/restoration transitions and the gates before market or trading work.
+The [source development notes](docs/source-development-2026-09-28.md) document
+opt-in official-release detail capture and unresolved source-access qualification.
 
 ## Source qualification and collection health
 

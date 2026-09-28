@@ -13,21 +13,22 @@ from .schema import digest
 from .store import Journal
 from .entities import ENTITY_VERSION, literal_slots
 from .first_party import FirstPartyResolver, VERSION as FIRST_PARTY_VERSION, SCOPES, SUBJECTS
+from .interpretation import interpret, policy as interpretation_policy
 
-VERSION = "fast-event-v5"
+VERSION = "fast-event-v6"
 EVIDENCE_POLICY_VERSION = "forward-evidence-v2"
 STRONG_EVIDENCE_STATES = frozenset({"CORRECTED", "WITHDRAWN", "DELETED", "CONTESTED"})
 CURSOR_KEY = "forward:seq"
 # Narrow headline patterns intentionally trade recall for inspectability. Bodies
 # are retained in the news journal, but historical context is not classified.
 RULES = {
-    "TANKER_ATTACK": r"\b(?:tanker|vessel|ship)\b.{0,45}\b(?:attacked|struck|hit)\b",
+    "TANKER_ATTACK": r"\b(?:(?:tanker|vessel|ship)\b.{0,45}\b(?:attacked|struck|hit)|(?:attacks?|attacked|attacking|strikes?|struck|hits?|hitting)\b.{0,25}\b(?:tanker|vessel|ship))\b",
     "TANKER_SEIZURE": r"\b(?:tanker|vessel|ship)\b.{0,45}\b(?:seized|detained)\b",
     "MILITARY_STRIKE": r"\b(?:military strike|airstrike|air strike)\b",
     "MISSILE_ATTACK": r"\bmissile (?:attack|strike)s?\b",
     "DRONE_ATTACK": r"\bdrone (?:attack|strike)s?\b",
     "SHIPPING_RESTRICTION": r"\b(?:shipping|transit|strait)\b.{0,45}\b(?:closed|halted|restricted|suspended)\b",
-    "SHIPPING_RESTORED": r"\b(?:shipping|transit|strait)\b.{0,45}\b(?:reopened|resumed|restored)\b",
+    "SHIPPING_RESTORED": r"\b(?:(?:shipping|transit|strait)\b.{0,45}\b(?:reopened|resumed|restored)|Hormuz\s+reopens?\s+to\s+shipping|reopen(?:s|ed)?\b[^.!?\n]{0,40}\b(?:Strait of Hormuz|Hormuz))\b",
     "PRODUCTION_SUSPENDED": r"\bproduction\b.{0,30}\b(?:suspended|halted|stopped)\b",
     "PRODUCTION_RESTORED": r"\bproduction\b.{0,30}\b(?:restored|resumed|restarted)\b",
     "EXPORT_TERMINAL_CLOSED": r"\b(?:terminal|loading|exports)\b.{0,30}\b(?:closed|halted|suspended)\b",
@@ -38,7 +39,7 @@ RULES = {
     "SANCTIONS_EASED": r"\b(?:lifts?|eases?|removes?)\b.{0,25}\bsanctions\b",
     "OPEC_OUTPUT_CUT": r"\bOPEC\+?\b.{0,45}\b(?:cuts?|reduces?)\b.{0,20}\b(?:output|production)\b",
     "OPEC_OUTPUT_INCREASE": r"\bOPEC\+?\b.{0,45}\b(?:raises?|increases?)\b.{0,20}\b(?:output|production)\b",
-    "CEASEFIRE_REACHED": r"\bceasefire\b.{0,25}\b(?:agreed|reached|announced)\b",
+    "CEASEFIRE_REACHED": r"\b(?:ceasefire\b.{0,25}\b(?:agreed|reached|announced)|(?:agree|agrees|agreed)\s+to\s+(?:a\s+)?ceasefire)\b",
     "CEASEFIRE_BROKEN": r"\bceasefire\b.{0,25}\b(?:broken|violated|collapsed)\b",
     "NEGOTIATIONS_STARTED": r"\b(?:talks|negotiations)\b.{0,25}\b(?:started|began|resumed)\b",
     "NEGOTIATIONS_COLLAPSED": r"\b(?:talks|negotiations)\b.{0,25}\b(?:collapsed|failed|halted)\b",
@@ -61,6 +62,7 @@ def classify(story: dict, assets: list[dict]) -> list[dict]:
     # No implicit identity claim from a publisher, URL, or source role.
     qualifier = QUALIFIERS.search(headline)
     slots = literal_slots(headline, assets)
+    interpretation = interpret(headline, slots)
     result = []
     for event_type, pattern in RULES.items():
         match = re.search(pattern, headline, re.I)
@@ -68,13 +70,14 @@ def classify(story: dict, assets: list[dict]) -> list[dict]:
             continue
         result.append({
             "event_type": event_type, "publisher": story["source_id"],
+            **interpretation,
             "claim_origin": claim_origin, **slots,
             "claim_origin_basis": "LITERAL_ATTRIBUTION" if claim_origin else "UNKNOWN",
             "syndication_origin": story.get("origin") if story.get("wire_provenance_version") else None,
             "source_attributions": story.get("source_attributions", []),
             "wire_evidence": story.get("wire_evidence", []),
             "legacy_origin_unverified": story.get("origin") if not story.get("wire_provenance_version") else None,
-            "state": "REVIEW_REQUIRED" if qualifier or len(origins) > 1 else (
+            "state": "REVIEW_REQUIRED" if qualifier or len(origins) > 1 or interpretation["assertion"] != "asserted" else (
                 "OFFICIAL_CLAIM" if claim_origin in OFFICIAL_ORIGINS else "REPORTED"),
             "evidence": {"field": "title", "start": match.start(), "end": match.end(), "quote": match.group()},
             "attribution_evidence": [{"start": m.start(), "end": m.end(), "quote": m.group()} for m in attribution],
@@ -92,6 +95,7 @@ class ForwardRecorder:
         self.news, self.output, self.assets = news, output, assets
         self.first_party = FirstPartyResolver(sources, first_party_reviews, assets)
         policy = {"classifier_version": VERSION, "entity_version": ENTITY_VERSION,
+                  "interpretation_policy": interpretation_policy(),
                   "first_party_version": FIRST_PARTY_VERSION, "first_party_reviews": first_party_reviews,
                   "first_party_sources": sources, "first_party_scopes": {k: sorted(v) for k, v in SCOPES.items()},
                   "first_party_subjects": SUBJECTS,
