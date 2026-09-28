@@ -56,6 +56,9 @@ def load_config(path: str | Path) -> OilConfig:
             raise ValueError("HTTPS source required")
         if source["adapter"] not in {"rss", "adnoc", "fujairah", "ukmto", "structured", "ofac", "centcom"}:
             raise ValueError("unknown source adapter")
+        if "capture_details" in source and (type(source["capture_details"]) is not bool
+                or source["adapter"] not in {"ofac", "centcom"}):
+            raise ValueError("capture_details requires a boolean and an official release adapter")
         for key in ("owner", "role", "allowed_hosts", "rights", "revision_policy", "timestamp_precision"):
             if not source.get(key):
                 raise ValueError(f"missing source registration: {key}")

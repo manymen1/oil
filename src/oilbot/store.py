@@ -13,7 +13,7 @@ from pathlib import Path
 from .clock import instant, stamp, utc_now
 from .schema import canonical, digest, to_dict
 
-PARSER_VERSION = "source-v2"
+PARSER_VERSION = "source-v3"
 WIRE_FIELDS = {"source_attributions", "wire_evidence", "wire_provenance_version"}
 
 

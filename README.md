@@ -43,6 +43,17 @@ for operator review; forced polls and restarts do not bypass them.
 See [the forward recorder and roadmap](docs/forward-collection.md).
 Use the [offline collector audit pack](docs/collector-audit.md) to preserve a
 snapshot, verify same-host replay and prepare a stratified coverage-review sample.
+The [offline story-review CLI](docs/story-review.md) supports revision-bound labels,
+missed-event annotations and separately dated coverage diagnostics without rewriting capture history.
+The [forward economic research protocol](docs/forward-economic-research.md) defines
+reviewed disruption/restoration transitions and the gates before market or trading work.
+The [source development notes](docs/source-development-2026-09-28.md) document
+opt-in official-release detail capture and unresolved source-access qualification.
+
+Development lives on `main`. Separate experiments with opt-in configuration,
+versioned policies, distinct data roots and immutable snapshots, not long-lived
+feature branches. Never update a running experiment's checkout: stop and record
+the old run first, then explicitly launch a new run under the new policy/commit.
 
 ## Source qualification and collection health
 
