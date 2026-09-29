@@ -32,6 +32,8 @@ def estimated_cost(view, features, policy, role):
 
 
 def transition_rows(records, assets, view, *, rules=StrategyRules(), policy=OutcomePolicy(), supports=(), roll_days=5):
+    if any(r["kind"] in {"fast_event", "operational_review_candidate", "forward_economic_transition"} for r in records):
+        raise ValueError("forward records require oilbot.economic_review dataset with dated assessments; legacy datasets cannot consume them")
     rules.validate()
     policy.validate()
     result = []

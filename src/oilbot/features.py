@@ -10,6 +10,8 @@ from .clock import epoch_ns, iso_ns
 from .schema import InstrumentDefinition, market_event, QuoteEvent, TradeEvent, MarketStatusEvent, digest
 
 WINDOWS = (1, 5, 30, 60, 300)
+RECEIPT_WINDOWS = (300, 120, 60, 30, 10, 5, 1)
+RECEIPT_VERSION = "receipt-response-v1"
 
 
 def relative_move(before, after):
@@ -115,6 +117,44 @@ class MarketView:
         if self.gap_between(instrument, quote.available_at, at):
             return None
         return quote
+
+    def receipt_response(self, received_at, candidate_at, decision_at, *, roll_days=5, max_age_seconds=2):
+        """Separate pre-receipt movement from processing latency on one contract.
+
+        Contract selection uses only definitions known just before receipt.
+        Neither a later roll nor a later definition can change the comparison.
+        These are observed midpoint moves, not causal attribution or alpha.
+        """
+        if type(roll_days) is not int or roll_days < 0 or max_age_seconds <= 0:
+            raise ValueError("invalid feature policy")
+        receive, candidate, decision = map(epoch_ns, (received_at, candidate_at, decision_at))
+        if not receive <= candidate <= decision:
+            raise ValueError("receipt, candidate and decision must be causally ordered")
+        before_at = iso_ns(receive - 1)
+        roles = self.roles(before_at, roll_days)
+        instrument = roles["CL1"]
+        anchors = {"before_receipt": before_at, "receipt": received_at,
+                   "candidate": candidate_at, "decision": decision_at}
+        quotes = {name: self.quote(instrument, at, max_age_seconds) for name, at in anchors.items()}
+        def move(start, end):
+            if self.gap_between(instrument, start, end):
+                return None
+            return relative_move(midpoint(self.quote(instrument, start, max_age_seconds)),
+                                 midpoint(self.quote(instrument, end, max_age_seconds)))
+        result = {"schema": RECEIPT_VERSION, "instrument_id": instrument, "roles_before_receipt": roles,
+            "anchors": anchors, "quotes": {k: q.__dict__ if q else None for k,q in quotes.items()},
+            "returns_before_receipt": {str(w): move(iso_ns(receive - w * 10**9), before_at) for w in RECEIPT_WINDOWS},
+            "receipt_step_return": move(before_at, received_at),
+            "receipt_to_candidate_return": move(received_at, candidate_at),
+            "candidate_to_decision_return": move(candidate_at, decision_at),
+            "receipt_to_decision_return": move(received_at, decision_at),
+            "latency_ms": {"receipt_to_candidate": (candidate - receive) / 10**6,
+                           "candidate_to_decision": (decision - candidate) / 10**6,
+                           "receipt_to_decision": (decision - receive) / 10**6},
+            "max_quote_age_seconds": max_age_seconds, "roll_days": roll_days,
+            "limitations": "Midpoint observations, not executable profit or proof that news caused a move."}
+        result["features_hash"] = digest(result)
+        return result
 
     def features(self, received_at, decision_at, *, roll_days=5, max_age_seconds=2):
         if type(roll_days) is not int or roll_days < 0 or max_age_seconds <= 0:

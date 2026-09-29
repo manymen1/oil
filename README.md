@@ -47,6 +47,19 @@ The [offline story-review CLI](docs/story-review.md) supports revision-bound lab
 missed-event annotations and separately dated coverage diagnostics without rewriting capture history.
 The [forward economic research protocol](docs/forward-economic-research.md) defines
 reviewed disruption/restoration transitions and the gates before market or trading work.
+Use the [economic transition review workflow](docs/economic-transition-review.md)
+to save dated operational assessments and inspect bridge exclusions from a verified snapshot.
+The [operational collection workflow](docs/operational-forward.md) adds an opt-in
+captured-text assessment queue and isolated, checksummed deployment runs.
+The [implementation and recovery notes](docs/implementation-2026-09-29.md) describe
+persistent user services, independent health checks, and the queue-to-research
+dataset handoff. This is research infrastructure, not an enabled trading bot.
+The next [admission and receipt-response milestone](docs/assessment-admission.md)
+adds a persistent fail-closed queue consumer and pre-receipt/processing-latency
+features without enabling model interpretation or trading.
+The [local paper execution core](docs/paper-execution.md) adds restartable synthetic
+scenarios, explicit paper intents, order/position ledgers, exits and risk checks.
+It does not convert research candidates into orders or connect to a broker.
 The [source development notes](docs/source-development-2026-09-28.md) document
 opt-in official-release detail capture and unresolved source-access qualification.
 

@@ -1,10 +1,10 @@
 """Conservative literal context, not event truth or inferred physical losses."""
 import re
 
-VERSION = "headline-interpretation-v1"
+VERSION = "headline-interpretation-v2"
 PATTERNS = {
     "denied": r"\b(?:no|not|never|denies|denied|deny|denial|false|untrue)\b",
-    "hypothetical": r"\b(?:may|might|could|would|if|possible|potential|risk|fears?|threatens?|plans?|considering|expected)\b|\?",
+    "hypothetical": r"\b(?:may|might|could|would|if|possible|potential|risk|fears?|threatens?|plans?|considering|expected|proposals?|propos(?:e|es|ed|ing)|roadmaps?)\b|\?",
     "historical": r"\b(?:last year|last month|anniversary|in (?:19|20)\d{2})\b",
     "unclear": r"\b(?:unconfirmed|rumou?r|reportedly)\b",
 }

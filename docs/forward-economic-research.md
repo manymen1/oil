@@ -25,6 +25,13 @@ It does not invoke the legacy incident reducer or change captured/classified row
 Use verified snapshot records, never edit original classifier output to supply
 reviewed fields. Persist the returned record to a new diagnostic artifact.
 
+The [economic transition review CLI](economic-transition-review.md) now provides
+snapshot-bound templates, append-only dated assessments and as-of reports around
+this API. The bridge implementation is `forward-economic-v2`; the additional
+causal and evidence checks do not establish that the economic hypotheses or
+human labels have been validated. The v1 protocol below remains a development
+definition pending that review.
+
 The assessment record has `id`, `available_at`, and `payload` containing:
 
 - Exact `event_id`, `story_revision_id`, `episode_id`; `reviewer`,

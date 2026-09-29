@@ -142,7 +142,7 @@ def test_diagnostics_preserve_receipt_and_bind_policy(reviewed):
     archive, *_ = reviewed
     value = diagnostic(archive, sample(archive))
     assert value["policy_hash"] == digest(value["policy"])
-    assert value["policy"]["classifier_version"] == "fast-event-v6"
+    assert value["policy"]["classifier_version"] == "fast-event-v7"
     assert not value["historical_reclassification"]
     for row in value["results"]:
         assert row["original_received_at"] == archive.stories[row["story_revision_id"]]["payload"]["local_received_at"]

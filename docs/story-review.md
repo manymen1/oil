@@ -1,13 +1,12 @@
 # Offline story review and interpretation
 
-Development branch: `codex/story-review`. Do not merge/deploy during the pinned
-48-hour v5 soak. This workflow reads a verified snapshot and writes a separate
+Development lives on `main`; the v5 soak ended early before the merge.
+This workflow reads a verified snapshot and writes a separate
 annotation database, never the live capture or historical classifier journals.
 
 ## CLI
 
-From the development checkout, use its source explicitly when sharing an existing
-virtualenv (an editable installation may otherwise point at the soak checkout):
+From the main checkout, use its source explicitly:
 
 ```bash
 PYTHONPATH=src python -m oilbot.story_review --manifest data/review-pilot/snapshot/manifest.json browse --sample data/review-pilot/coverage-sample.json
@@ -76,7 +75,11 @@ send a fresh sample to a model under that authorization.
 
 ## Versioned diagnostics
 
-The branch classifier is `fast-event-v6`, with explicit assertion/relevance fields.
+The current classifier is `fast-event-v7`, with explicit assertion/relevance fields.
+Version 7 additionally treats proposals and roadmaps as hypothetical, including
+rejected proposals, and recognizes the noun/gerund wording “reopening Hormuz”.
+Whole-text compound scope remains conservative; hypothetical recognition does
+not prove an event happened. Full-text diagnostics remain offline only.
 It covers active/passive tanker-attack wording, ordinary ceasefire word order,
 and Hormuz reopening. Denials, uncertain/hypothetical/historical wording remain
 review candidates, never asserted confirmations. Recognized unrelated production
@@ -120,14 +123,23 @@ Recall is conditional on captured material, not stories omitted by feeds or outa
 
 ## Holdout after the soak
 
-Freeze this branch policy and this pilot as tuning material. After the fixed soak
-deadline, export a new snapshot and draw a deterministic source/disposition-stratified
+Freeze each evaluated policy and pilot as tuning material. After ending a run,
+export a new snapshot and draw a deterministic source/disposition-stratified
 sample from **new, nonbaseline story identities not in this pilot**. Keep revisions
 of a pilot story and adjudicated same-episode reports out of the holdout; unresolved
 episode dependence must be disclosed. Freeze IDs, strata and denominators before
 labels or diagnostic inspection. Obtain human labels (or separately authorize any
 model review), evaluate once, retain uncertainties, and report both input modes.
 Do not claim holdout validation until that sample exists and is reviewed.
+
+The early-ended September 27 run produced a nine-revision sample. On September 28
+the user separately authorized the assistant to do its offline review. Its labels,
+pre-fix v6 diagnostics, and economic screens are saved under
+`data/reviews/20260928-assistant-holdout/`. They are assistant labels, not independent
+human ground truth. The sample exposed a proposed-restoration false positive and
+now informed v7 development, so subsequent evaluation on it is a regression check,
+not fresh holdout validation. There were no supported actual operational transitions
+in this sample; positive real-data economic-bridge validation remains unestablished.
 
 The `sample` command freezes metadata-only holdout selection, with all nonempty
 cohort strata and denominators. It excludes tuning story identities and known

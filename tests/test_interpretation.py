@@ -14,7 +14,7 @@ def test_active_passive_wording(title, kind):
     events = classify({"title":title,"source_id":"synthetic"}, [])
     assert any(e["event_type"] == kind for e in events)
     assert all(e["claim_origin"] is None and e["confirmation"] == "UNVERIFIED" for e in events)
-    assert VERSION == "fast-event-v6"
+    assert VERSION == "fast-event-v7"
 
 
 @pytest.mark.parametrize("title,assertion", [
@@ -55,3 +55,34 @@ def test_conditional_hormuz_restoration_is_not_actual_reopening():
     event = next(e for e in events if e["event_type"] == "SHIPPING_RESTORED")
     assert event["assertion"] == "hypothetical" and not event["asserted_oil_event_candidate"]
     assert event["claim_origin"] == "iran" and event["confirmation"] == "UNVERIFIED"
+
+
+@pytest.mark.parametrize("title", [
+    "Officials rejected a seven-day roadmap to reopen Strait of Hormuz",
+    "Iran maintains its proposal for reopening the crucial Strait of Hormuz",
+    "Iran proposes reopening Hormuz to shipping",
+    "Proposed reopening of Hormuz awaits approval",
+    "Iran is proposing to reopen Hormuz",
+    "A roadmap to reopen Hormuz was accepted",
+])
+def test_restoration_proposals_are_not_completed_operations(title):
+    event = next(e for e in classify({"title": title, "source_id": "synthetic"}, [])
+                 if e["event_type"] == "SHIPPING_RESTORED")
+    assert event["assertion"] == "hypothetical"
+    assert event["state"] == "REVIEW_REQUIRED"
+    assert not event["asserted_oil_event_candidate"]
+    assert event["confirmation"] == "UNVERIFIED"
+    assert event["qualifier"]
+    for span in event["interpretation_evidence"]:
+        assert title[span["start"]:span["end"]] == span["quote"]
+
+
+def test_compound_proposal_and_denial_remain_unclear():
+    event = classify({"title": "Iran denies a proposal to reopen Hormuz", "source_id": "synthetic"}, [])[0]
+    assert event["assertion"] == "unclear"
+    assert not event["asserted_oil_event_candidate"]
+
+
+def test_proposal_word_boundary_does_not_match_unrelated_words():
+    event = classify({"title": "Terminal loading resumed with repurposed equipment", "source_id": "synthetic"}, [])[0]
+    assert event["assertion"] == "asserted"

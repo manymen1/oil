@@ -15,7 +15,7 @@ from .entities import ENTITY_VERSION, literal_slots
 from .first_party import FirstPartyResolver, VERSION as FIRST_PARTY_VERSION, SCOPES, SUBJECTS
 from .interpretation import interpret, policy as interpretation_policy
 
-VERSION = "fast-event-v6"
+VERSION = "fast-event-v7"
 EVIDENCE_POLICY_VERSION = "forward-evidence-v2"
 STRONG_EVIDENCE_STATES = frozenset({"CORRECTED", "WITHDRAWN", "DELETED", "CONTESTED"})
 CURSOR_KEY = "forward:seq"
@@ -28,7 +28,7 @@ RULES = {
     "MISSILE_ATTACK": r"\bmissile (?:attack|strike)s?\b",
     "DRONE_ATTACK": r"\bdrone (?:attack|strike)s?\b",
     "SHIPPING_RESTRICTION": r"\b(?:shipping|transit|strait)\b.{0,45}\b(?:closed|halted|restricted|suspended)\b",
-    "SHIPPING_RESTORED": r"\b(?:(?:shipping|transit|strait)\b.{0,45}\b(?:reopened|resumed|restored)|Hormuz\s+reopens?\s+to\s+shipping|reopen(?:s|ed)?\b[^.!?\n]{0,40}\b(?:Strait of Hormuz|Hormuz))\b",
+    "SHIPPING_RESTORED": r"\b(?:(?:shipping|transit|strait)\b.{0,45}\b(?:reopened|resumed|restored)|Hormuz\s+reopens?\s+to\s+shipping|reopen(?:s|ed|ing)?\b[^.!?\n]{0,40}\b(?:Strait of Hormuz|Hormuz))\b",
     "PRODUCTION_SUSPENDED": r"\bproduction\b.{0,30}\b(?:suspended|halted|stopped)\b",
     "PRODUCTION_RESTORED": r"\bproduction\b.{0,30}\b(?:restored|resumed|restarted)\b",
     "EXPORT_TERMINAL_CLOSED": r"\b(?:terminal|loading|exports)\b.{0,30}\b(?:closed|halted|suspended)\b",
@@ -50,6 +50,7 @@ ATTRIBUTION = re.compile(
 QUALIFIERS = re.compile(
     r"\b(?:no|not|never|denies|denied|denial|false|untrue|unconfirmed|rumou?r|"
     r"may|might|could|would|if|risk|fears?|threatens?|plans?|considering|expected|"
+    r"proposals?|propos(?:e|es|ed|ing)|roadmaps?|"
     r"last year|last month|anniversary)\b|\?", re.I)
 OFFICIAL_ORIGINS = {"irgc", "centcom", "ukmto", "opec", "aramco", "adnoc"}
 

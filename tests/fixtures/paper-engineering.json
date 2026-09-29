@@ -1,0 +1,203 @@
+{
+  "schema": "paper-engineering-scenario-v1",
+  "synthetic": true,
+  "description": "Synthetic execution plumbing only. Example MCL is not a user-selected live instrument. Costs and risk limits are test assumptions.",
+  "definition": {
+    "instrument_id": "MCL-2026-10",
+    "product": "MCL",
+    "month": "2026-10",
+    "exchange": "NYMEX",
+    "currency": "USD",
+    "multiplier": "100",
+    "tick_size": "0.01",
+    "last_trade_at": "2026-09-22T18:00:00Z",
+    "sessions": [
+      {
+        "open": "2026-09-18T00:00:00Z",
+        "close": "2026-09-18T21:00:00Z"
+      }
+    ],
+    "available_at": "2026-09-17T00:00:00Z",
+    "vendor_id": "synthetic-mcl",
+    "data_mode": "fixture"
+  },
+  "limits": {},
+  "inputs": [
+    {
+      "id": "q1",
+      "at": "2026-09-18T12:00:00.000Z",
+      "kind": "quote",
+      "payload": {
+        "instrument_id": "MCL-2026-10",
+        "available_at": "2026-09-18T12:00:00.000Z",
+        "bid": "72.00",
+        "ask": "72.02",
+        "bid_size": 10,
+        "ask_size": 10,
+        "bid_at": "2026-09-18T12:00:00.000Z",
+        "ask_at": "2026-09-18T12:00:00.000Z",
+        "sequence": 1,
+        "data_mode": "fixture",
+        "subscription": "synthetic-paper-demo"
+      }
+    },
+    {
+      "id": "synthetic-long",
+      "at": "2026-09-18T12:00:00.000Z",
+      "kind": "signal",
+      "payload": {
+        "action": "PAPER_INTENT",
+        "authorization": "paper_only",
+        "instrument_id": "MCL-2026-10",
+        "episode_id": "synthetic-long",
+        "quantity": 1,
+        "direction": 1,
+        "limit_price": "72.03"
+      }
+    },
+    {
+      "id": "q2",
+      "at": "2026-09-18T12:00:01.000Z",
+      "kind": "quote",
+      "payload": {
+        "instrument_id": "MCL-2026-10",
+        "available_at": "2026-09-18T12:00:01.000Z",
+        "bid": "72.00",
+        "ask": "72.02",
+        "bid_size": 10,
+        "ask_size": 10,
+        "bid_at": "2026-09-18T12:00:01.000Z",
+        "ask_at": "2026-09-18T12:00:01.000Z",
+        "sequence": 2,
+        "data_mode": "fixture",
+        "subscription": "synthetic-paper-demo"
+      }
+    },
+    {
+      "id": "q3",
+      "at": "2026-09-18T12:00:02.000Z",
+      "kind": "quote",
+      "payload": {
+        "instrument_id": "MCL-2026-10",
+        "available_at": "2026-09-18T12:00:02.000Z",
+        "bid": "72.50",
+        "ask": "72.52",
+        "bid_size": 10,
+        "ask_size": 10,
+        "bid_at": "2026-09-18T12:00:02.000Z",
+        "ask_at": "2026-09-18T12:00:02.000Z",
+        "sequence": 3,
+        "data_mode": "fixture",
+        "subscription": "synthetic-paper-demo"
+      }
+    },
+    {
+      "id": "q4",
+      "at": "2026-09-18T12:00:03.000Z",
+      "kind": "quote",
+      "payload": {
+        "instrument_id": "MCL-2026-10",
+        "available_at": "2026-09-18T12:00:03.000Z",
+        "bid": "72.00",
+        "ask": "72.02",
+        "bid_size": 10,
+        "ask_size": 10,
+        "bid_at": "2026-09-18T12:00:03.000Z",
+        "ask_at": "2026-09-18T12:00:03.000Z",
+        "sequence": 4,
+        "data_mode": "fixture",
+        "subscription": "synthetic-paper-demo"
+      }
+    },
+    {
+      "id": "synthetic-short",
+      "at": "2026-09-18T12:00:03.000Z",
+      "kind": "signal",
+      "payload": {
+        "action": "PAPER_INTENT",
+        "authorization": "paper_only",
+        "instrument_id": "MCL-2026-10",
+        "episode_id": "synthetic-short",
+        "quantity": 1,
+        "direction": -1,
+        "limit_price": "71.99"
+      }
+    },
+    {
+      "id": "q5",
+      "at": "2026-09-18T12:00:04.000Z",
+      "kind": "quote",
+      "payload": {
+        "instrument_id": "MCL-2026-10",
+        "available_at": "2026-09-18T12:00:04.000Z",
+        "bid": "72.00",
+        "ask": "72.02",
+        "bid_size": 10,
+        "ask_size": 10,
+        "bid_at": "2026-09-18T12:00:04.000Z",
+        "ask_at": "2026-09-18T12:00:04.000Z",
+        "sequence": 5,
+        "data_mode": "fixture",
+        "subscription": "synthetic-paper-demo"
+      }
+    },
+    {
+      "id": "q6",
+      "at": "2026-09-18T12:00:05.000Z",
+      "kind": "quote",
+      "payload": {
+        "instrument_id": "MCL-2026-10",
+        "available_at": "2026-09-18T12:00:05.000Z",
+        "bid": "72.30",
+        "ask": "72.32",
+        "bid_size": 10,
+        "ask_size": 10,
+        "bid_at": "2026-09-18T12:00:05.000Z",
+        "ask_at": "2026-09-18T12:00:05.000Z",
+        "sequence": 6,
+        "data_mode": "fixture",
+        "subscription": "synthetic-paper-demo"
+      }
+    },
+    {
+      "id": "synthetic-cancel",
+      "at": "2026-09-18T12:00:06.000Z",
+      "kind": "signal",
+      "payload": {
+        "action": "PAPER_INTENT",
+        "authorization": "paper_only",
+        "instrument_id": "MCL-2026-10",
+        "episode_id": "synthetic-cancel",
+        "quantity": 1,
+        "direction": 1,
+        "limit_price": "72.33"
+      }
+    },
+    {
+      "id": "kill-switch",
+      "at": "2026-09-18T12:00:06.000Z",
+      "kind": "halt",
+      "payload": {
+        "reason": "synthetic kill-switch test"
+      }
+    },
+    {
+      "id": "q7",
+      "at": "2026-09-18T12:00:07.000Z",
+      "kind": "quote",
+      "payload": {
+        "instrument_id": "MCL-2026-10",
+        "available_at": "2026-09-18T12:00:07.000Z",
+        "bid": "72.30",
+        "ask": "72.32",
+        "bid_size": 10,
+        "ask_size": 10,
+        "bid_at": "2026-09-18T12:00:07.000Z",
+        "ask_at": "2026-09-18T12:00:07.000Z",
+        "sequence": 7,
+        "data_mode": "fixture",
+        "subscription": "synthetic-paper-demo"
+      }
+    }
+  ]
+}

@@ -7,7 +7,7 @@ Exact spans validate provenance, not the truth of the reviewer's interpretation.
 from .clock import instant
 from .schema import digest
 
-VERSION = "forward-economic-v1"
+VERSION = "forward-economic-v3"
 STATES = {"UNKNOWN", "OPERATING", "IMPAIRED", "SUSPENDED", "PARTLY_RESTORED", "RESTORED"}
 STAGES = {"initial_report", "identity", "damage", "restriction", "disruption",
           "duration_update", "repair", "partial_restoration", "restoration",
@@ -15,7 +15,7 @@ STAGES = {"initial_report", "identity", "damage", "restriction", "disruption",
 CONFIRMATIONS = {"UNVERIFIED", "ACTOR_CLAIM", "MARITIME_AUTHORITY_REPORT", "OPERATOR_REPORT"}
 
 
-def build_transition(event, story, assessment, mapping, *, evaluated_at):
+def build_transition(event, story, assessment, mapping, *, evaluated_at, evidence_stories=None):
     """Normalize one reviewed stage using only inputs available by evaluation.
 
     assessment is a record {id, available_at, payload}; payload must name the
@@ -27,11 +27,13 @@ def build_transition(event, story, assessment, mapping, *, evaluated_at):
     for row in (event, story, assessment):
         if not row.get("id") or instant(row["available_at"]) > now:
             raise ValueError("missing identity or future input")
-    if event.get("kind") != "fast_event" or story.get("kind") != "story_revision":
+    if event.get("kind") not in {"fast_event", "operational_review_candidate"} or story.get("kind") != "story_revision":
         raise ValueError("forward event and captured story revision required")
     e, s, a = event["payload"], story["payload"], assessment["payload"]
     if e["story_revision_id"] != story["id"] or a["event_id"] != event["id"] or a["story_revision_id"] != story["id"]:
         raise ValueError("revision binding mismatch")
+    if instant(event["available_at"]) < instant(story["available_at"]):
+        raise ValueError("classifier predates captured story availability")
     if instant(assessment["available_at"]) < max(instant(event["available_at"]), instant(story["available_at"])):
         raise ValueError("review predates its inputs")
     if instant(mapping["as_of"]) != now:
@@ -39,7 +41,7 @@ def build_transition(event, story, assessment, mapping, *, evaluated_at):
     groups = [g for g in mapping["episodes"] if event["id"] in g["event_ids"]]
     if len(groups) != 1 or a["episode_id"] != groups[0]["id"]:
         raise ValueError("reviewed episode binding mismatch")
-    if not a.get("reviewer", "").strip() or not a.get("reason", "").strip():
+    if any(not isinstance(a.get(k), str) or not a[k].strip() for k in ("reviewer", "reason")):
         raise ValueError("dated reviewer provenance required")
     if a.get("reviewer_type") not in {"human", "assistant"}:
         raise ValueError("reviewer type required")
@@ -56,15 +58,44 @@ def build_transition(event, story, assessment, mapping, *, evaluated_at):
     unresolved = a.get("unresolved_entities", [])
     if not isinstance(unresolved, list) or any(not isinstance(x, str) or not x.strip() for x in unresolved):
         raise ValueError("unresolved entities must be a list of nonempty strings")
+    evidence = a.get("evidence")
+    if not isinstance(evidence, list) or not evidence:
+        raise ValueError("literal evidence required")
+    fields = {"stage", "assertion", "state_before", "state_after", "mechanism",
+              "confirmation_level", "claim_origin", "asset", "asset_type", "location",
+              "severity", "estimated_duration"}
+    for key in ("claim_origin", "asset", "asset_type", "location", "severity", "estimated_duration"):
+        if a.get(key) is not None and (not isinstance(a[key], str) or not a[key].strip()):
+            raise ValueError(key + " must be nonempty text or null")
     supported = set()
-    for span in a.get("evidence", []):
+    prior_story_hashes = {}
+    for span in evidence:
+        base_keys = {"text_field", "start", "end", "quote", "supports"}
+        if not isinstance(span, dict) or set(span) not in (base_keys, base_keys | {"story_revision_id"}):
+            raise ValueError("evidence requires field, offsets, quote and supported fields")
+        evidence_text = s
+        if "story_revision_id" in span:
+            prior = (evidence_stories or {}).get(span["story_revision_id"])
+            if (prior is None or prior.get("kind") != "story_revision" or
+                    instant(prior["available_at"]) >= instant(story["available_at"]) or
+                    instant(prior["available_at"]) > instant(s["local_received_at"])):
+                raise ValueError("prior-state evidence must be a captured story available before receipt")
+            if span["supports"] != ["state_before"]:
+                raise ValueError("prior story evidence can support only state_before")
+            evidence_text = prior["payload"]
+            prior_story_hashes[prior["id"]] = digest(prior)
         field = span["text_field"]
         if field not in {"title", "text"}:
             raise ValueError("invalid evidence field")
         lo, hi = span["start"], span["end"]
-        if type(lo) is not int or type(hi) is not int or not 0 <= lo < hi <= len(s[field]) or s[field][lo:hi] != span["quote"]:
+        if type(lo) is not int or type(hi) is not int or not 0 <= lo < hi <= len(evidence_text[field]) or evidence_text[field][lo:hi] != span["quote"]:
             raise ValueError("evidence must match exact captured text")
-        supported.update(span["supports"])
+        supports = span["supports"]
+        if not isinstance(supports, list) or not supports or any(not isinstance(k, str) or k not in fields for k in supports):
+            raise ValueError("evidence supports must name reviewed fields")
+        if "claim_origin" in supports and a.get("claim_origin") and a["claim_origin"].casefold() not in span["quote"].casefold():
+            raise ValueError("claim origin must occur in its cited evidence")
+        supported.update(supports)
     required = {"stage", "assertion"}
     for key, unknown in (("state_before", "UNKNOWN"), ("state_after", "UNKNOWN"),
                          ("mechanism", "unknown"), ("confirmation_level", "UNVERIFIED")):
@@ -98,6 +129,11 @@ def build_transition(event, story, assessment, mapping, *, evaluated_at):
         reasons.append("EVIDENCE_REQUIRES_REVIEW")
     if s.get("initial_snapshot", True):
         reasons.append("INITIAL_SNAPSHOT_EXCLUDED")
+    if event["kind"] == "operational_review_candidate":
+        if e.get("story_hash") != digest(story):
+            raise ValueError("operational candidate story hash mismatch")
+        if not e.get("forward_capture_candidate") or e.get("exclusions"):
+            reasons.append("CAPTURE_EXCLUDED")
     if a["confirmation_level"] not in {"OPERATOR_REPORT", "MARITIME_AUTHORITY_REPORT"}:
         reasons.append("WEAK_OR_AMBIGUOUS_SOURCE")
     if not a.get("claim_origin"):
@@ -106,10 +142,15 @@ def build_transition(event, story, assessment, mapping, *, evaluated_at):
         reasons.append("NO_CRUDE_MECHANISM")
     if not (disruption or restoration):
         reasons.append("NO_ELIGIBLE_STATE_TRANSITION")
-    if disruption and a["stage"] not in {"restriction", "disruption"} or restoration and a["stage"] not in {"partial_restoration", "restoration"}:
+    restoration_stage = "partial_restoration" if after == "PARTLY_RESTORED" else "restoration"
+    if disruption and a["stage"] not in {"restriction", "disruption"} or restoration and a["stage"] != restoration_stage:
         reasons.append("STAGE_STATE_MISMATCH")
     result = {"schema": VERSION, "episode_id": a["episode_id"], "event_id": event["id"],
-              "event_family": "disruption" if disruption else "restoration" if restoration else "other",
+              "contract": "operational-transition-v1", "candidate_kind": event["kind"],
+              "story_revision_id": story["id"], "reviewer_type": a["reviewer_type"],
+              "initial_snapshot": s.get("initial_snapshot", True), "novelty": a["novel"],
+              "episode_verified": a["episode_reviewed"] and not groups[0].get("review_required", False),
+              "event_family": "physical_disruption" if disruption else "restoration" if restoration else "other",
               "event_transition": before + "->" + after,
               **{k: a.get(k) for k in ("stage", "state_before", "state_after", "assertion", "asset", "asset_type",
                   "location", "claim_origin", "confirmation_level", "severity", "estimated_duration", "mechanism")},
@@ -121,7 +162,8 @@ def build_transition(event, story, assessment, mapping, *, evaluated_at):
               "direction": None, "research_eligible": not reasons,
               "abstention_reasons": reasons + ["MARKET_DATA_UNAVAILABLE", "INSUFFICIENT_HISTORICAL_SUPPORT"],
               "trade_authorized": False, "assessment_id": assessment["id"], "evidence": a["evidence"],
-              "mapping_hash": digest(mapping), "input_revision_ids": sorted(set([event["id"], story["id"], assessment["id"]]
-                  + mapping.get("active_review_ids", []))),
+              "mapping_hash": digest(mapping), "prior_story_hashes": prior_story_hashes,
+              "input_revision_ids": sorted(set([event["id"], story["id"], assessment["id"]]
+                  + mapping.get("active_review_ids", []) + list(prior_story_hashes))),
               "limitations": "Reviewed claims, not verified physical truth. No return estimate or execution decision."}
     return {"id": digest(result), "kind": "forward_economic_transition", "available_at": evaluated_at, "payload": result}

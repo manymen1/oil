@@ -94,6 +94,12 @@ def record(config, component: str, *, once: bool, fixture: Path | None, stop=Non
             from .linking import LinkerWorker
             worker = LinkerWorker(Journal(config.db("news")), Journal(config.db("forward")))
             work = worker.run_once
+        elif component == "operational":
+            if config.raw.get("pipeline") != "forward" or not config.raw.get("operational_queue"):
+                raise ValueError("operational queue must be enabled in a forward configuration")
+            from .operational import OperationalQueue
+            worker = OperationalQueue(Journal(config.db("news")), Journal(config.db("forward")), config.raw["assets"], config.sources)
+            work = worker.run_once
         elif component == "analysis":
             if config.raw.get("pipeline") == "forward":
                 raise ValueError("forward pipeline uses --component forward; model analysis is disabled")
@@ -150,7 +156,7 @@ def record(config, component: str, *, once: bool, fixture: Path | None, stop=Non
                     runtime.set_cursor(db, "runtime:" + component, last)
                 if once:
                     return result
-                stop.wait(1 if component in {"forward", "linker"} else (5 if component == "analysis" and result.get("pending") else 30))
+                stop.wait(1 if component in {"forward", "linker", "operational"} else (5 if component == "analysis" and result.get("pending") else 30))
         finally:
             runtime.append("runtime_stop", {"component": component, "clock": stamp()})
     return {"stopped": component}
@@ -163,7 +169,7 @@ def main(argv=None):
         child = sub.add_parser(command)
         child.add_argument("--config", default="configs/observe.yaml")
         if command == "record":
-            child.add_argument("--component", choices=("news", "market", "analysis", "forward", "linker"), required=True)
+            child.add_argument("--component", choices=("news", "market", "analysis", "forward", "linker", "operational"), required=True)
             child.add_argument("--once", action="store_true")
             child.add_argument("--fixture", type=Path)
         if command in {"snapshot", "demo"}:
@@ -192,6 +198,11 @@ def main(argv=None):
     child.add_argument("--config", default="configs/forward.yaml")
     child.add_argument("--after-seq", type=int, default=0)
     child.add_argument("--limit", type=int, default=100)
+    child = sub.add_parser("operational-queue", help="Read-only captured-text assessment queue; no model or confirmation")
+    child.add_argument("--config", default="configs/forward.yaml")
+    child.add_argument("--after-seq", type=int, default=0)
+    child.add_argument("--limit", type=int, default=100)
+    child.add_argument("--include-baseline", action="store_true")
     child = sub.add_parser("review-forward-link", help="Append a human decision; never edits evidence")
     child.add_argument("--config", default="configs/forward.yaml")
     child.add_argument("--candidate", required=True)
@@ -234,6 +245,15 @@ def main(argv=None):
     child.add_argument("--registry", type=Path, required=True)
     child.add_argument("--schema", choices=("mbp-1", "trades"), default="mbp-1")
     child.add_argument("--out", type=Path, required=True)
+    child = sub.add_parser("paper-replay", help="Local paper execution of explicit intents; no broker connection")
+    child.add_argument("--manifest", type=Path, required=True)
+    child.add_argument("--instrument", required=True)
+    child.add_argument("--limits", type=Path, required=True)
+    child.add_argument("--out", type=Path, required=True)
+    child = sub.add_parser("paper-scenario", help="Run or resume an explicit synthetic paper scenario, never real orders")
+    child.add_argument("--file", type=Path, required=True)
+    child.add_argument("--out", type=Path, required=True)
+    child.add_argument("--resume", action="store_true")
     child = sub.add_parser("dataset")
     child.add_argument("--manifest", type=Path, required=True)
     child.add_argument("--market", type=Path)
@@ -260,7 +280,11 @@ def main(argv=None):
             child.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command == "forward-quality":
+        if args.command == "operational-queue":
+            from .operational import read_queue
+            config = load_config(args.config)
+            result = read_queue(config.db("forward"), after_seq=args.after_seq, limit=args.limit, include_baseline=args.include_baseline)
+        elif args.command == "forward-quality":
             from .forward_quality import forward_quality
             result = forward_quality(load_config(args.config), window_seconds=args.window_seconds)
         elif args.command == "reset-source-circuit":
@@ -309,6 +333,12 @@ def main(argv=None):
                 raise ValueError("import destination already exists")
             result = record_adapter(adapter, args.out)
             atomic_json(args.out / "provenance.json", adapter.provenance())
+        elif args.command == "paper-replay":
+            from .paper import PaperLimits, paper_replay
+            result = paper_replay(args.manifest, args.out, args.instrument, PaperLimits(**json.loads(args.limits.read_text())))
+        elif args.command == "paper-scenario":
+            from .paper_scenario import run_scenario
+            result = run_scenario(args.file, args.out, resume=args.resume)
         elif args.command == "dataset":
             from .dataset import build_dataset
             from .strategy import StrategyRules

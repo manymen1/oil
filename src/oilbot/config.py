@@ -34,6 +34,8 @@ def load_config(path: str | Path) -> OilConfig:
         raise ValueError("oil supports observation only; broker execution must be disabled")
     if raw.get("pipeline", "reviewed") not in {"reviewed", "forward"}:
         raise ValueError("unknown observation pipeline")
+    if "operational_queue" in raw and (type(raw["operational_queue"]) is not bool or raw.get("pipeline") != "forward"):
+        raise ValueError("operational_queue requires a boolean and the forward pipeline")
     providers = {"fixture", "disabled"} if raw.get("pipeline") == "forward" else {"fixture"}
     if raw.get("market", {}).get("provider") not in providers:
         raise ValueError("live provider not qualified; only fixture adapter is implemented")

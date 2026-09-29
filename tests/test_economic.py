@@ -93,3 +93,39 @@ def test_restoration_and_baseline_exclusion():
     assert build_transition(*args, evaluated_at=T2)["payload"]["hypothesis_direction"] == "down"
     args[1]["payload"]["initial_snapshot"] = True
     assert "INITIAL_SNAPSHOT_EXCLUDED" in build_transition(*args, evaluated_at=T2)["payload"]["abstention_reasons"]
+
+
+def test_classifier_cannot_predate_story():
+    args = inputs()
+    args[1]["available_at"] = T2
+    with pytest.raises(ValueError, match="classifier predates"):
+        build_transition(*args, evaluated_at=T2)
+
+
+@pytest.mark.parametrize("stage,after,eligible", [
+    ("partial_restoration", "PARTLY_RESTORED", True),
+    ("restoration", "RESTORED", True),
+    ("restoration", "PARTLY_RESTORED", False),
+    ("partial_restoration", "RESTORED", False),
+])
+def test_restoration_stage_must_match_state(stage, after, eligible):
+    args = inputs()
+    args[2]["payload"].update(state_before="SUSPENDED", state_after=after, stage=stage)
+    result = build_transition(*args, evaluated_at=T2)["payload"]
+    assert result["research_eligible"] is eligible
+    assert ("STAGE_STATE_MISMATCH" in result["abstention_reasons"]) is not eligible
+
+
+@pytest.mark.parametrize("supports", ["stage", [], ["invented"], [None]])
+def test_invalid_evidence_supports(supports):
+    args = inputs()
+    args[2]["payload"]["evidence"][0]["supports"] = supports
+    with pytest.raises(ValueError, match="supports"):
+        build_transition(*args, evaluated_at=T2)
+
+
+def test_named_origin_needs_literal_anchor():
+    args = inputs()
+    args[2]["payload"]["claim_origin"] = "Someone Else"
+    with pytest.raises(ValueError, match="claim origin"):
+        build_transition(*args, evaluated_at=T2)

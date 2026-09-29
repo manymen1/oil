@@ -45,7 +45,12 @@ def main():
                 ForwardRecorder(Journal(config.db("news")), Journal(config.db("forward")), config.raw["assets"],
                     asset_registry_version=config.raw["asset_registry_version"], source_registry_version=config.raw["registry_version"],
                     sources=config.sources, first_party_reviews=config.raw.get("first_party_reviews", []))
-            for component in (("forward", "linker", "news") if forward else ("news", "market", "analysis")):
+                if config.raw.get("operational_queue"):
+                    from oilbot.operational import OperationalQueue
+                    OperationalQueue(Journal(config.db("news")), Journal(config.db("forward")), config.raw["assets"], config.sources)
+            components = (("forward", "linker", "operational", "news") if config.raw.get("operational_queue")
+                          else ("forward", "linker", "news")) if forward else ("news", "market", "analysis")
+            for component in components:
                 logs[component] = (config.root / f"{component}.log").open("a")
                 restarts[component], next_start[component] = 0, 0
             while not stopped.is_set():
