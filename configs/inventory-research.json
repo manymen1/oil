@@ -1,0 +1,13 @@
+{
+  "version": "inventory-change-confirmation-v1-draft",
+  "min_crude_change_mb": "2.0",
+  "confirmation_seconds": 60,
+  "max_decision_delay_seconds": 300,
+  "max_poll_gap_seconds": 180,
+  "max_period_age_days": 10,
+  "max_cot_age_days": 14,
+  "max_spread_ticks": 3,
+  "min_depth": 1,
+  "max_receipt_move": 0.005,
+  "max_volatility_5m": 0.01
+}

@@ -159,6 +159,12 @@ class ListingAdapter:
 
 
 def adapter(source: dict):
+    if source["adapter"] == "bsee_report":
+        from .bsee import BSEEAdapter
+        return BSEEAdapter(source["url"])
+    if source["adapter"] == "nhc_json":
+        from .weather import NHCAdapter
+        return NHCAdapter()
     if source["adapter"] == "structured":
         from .provenance import StructuredNewsAdapter
         return StructuredNewsAdapter()
@@ -386,6 +392,8 @@ class NewsCollector:
             health = str(exc) if isinstance(exc, ParseFailure) else type(exc).__name__
             failures = cursor.get("failures", 0) + 1
             delay = min(900, source["poll_seconds"] * 2 ** min(failures, 10))
+            if source["adapter"] == "bsee_report":
+                delay = max(delay, source["poll_seconds"])
             if response:
                 delay = max(delay, retry_delay(response["headers"].get("Retry-After"), utc_now()))
             parsing_failed = isinstance(exc, ValueError) and response is not None and response["status"] == 200

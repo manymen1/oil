@@ -3,7 +3,9 @@
 Standalone oil observation and research application. Current priority: **forward
 news recording**, local deterministic event candidates, and auditable incident
 lineage. The current milestone is a durable geopolitical-news dataset.
-GitHub CI, live market data, IBKR integration and strategy work are deferred.
+Development also includes local paper execution and an opt-in read-only IBKR/MCL
+connection and quote-capture path. Broker order execution and strategy activation
+remain disabled; live market data is not yet qualified.
 
 ## Install
 
@@ -60,6 +62,34 @@ features without enabling model interpretation or trading.
 The [local paper execution core](docs/paper-execution.md) adds restartable synthetic
 scenarios, explicit paper intents, order/position ledgers, exits and risk checks.
 It does not convert research candidates into orders or connect to a broker.
+The [IBKR/MCL paper integration](docs/ibkr-paper.md) adds offline preflight and
+explicit read-only contract/account discovery and bounded BidAsk capture. It
+does not send broker orders or require broker dependencies for observation work.
+The [official macro sources and inventory strategy](docs/macro-sources-and-strategy.md)
+add isolated EIA/CFTC numeric observations, immutable release vintages, and an
+inventory-change/price-confirmation research policy with comparison baselines.
+`macro-dataset` exports grouped release revisions and cost-aware hypothetical
+MCL labels, with causal features and explicit incomplete return windows.
+`macro-worker` adds dated release-aware polling and `macro-health` independently
+checks stale collection, overdue releases and worker heartbeats. A separate
+installer freezes its deployment; individual CLI commands never install services.
+No strategy output authorizes trading.
+The opt-in [inventory continuation logic](docs/inventory-continuation-logic.md)
+adds sustained CL/MCL confirmation, calendar-spread agreement and a cost screen,
+while retaining the original strategy as a baseline. `macro-evaluate` adds a
+release-grouped chronological holdout comparison; it never promotes a strategy
+or treats hypothetical results as proof of a profitable trading edge.
+The [oil-price drivers and source coverage](docs/oil-price-drivers-and-sources.md)
+maps the research priorities and adds an isolated NOAA/NHC weather adapter and
+as-of regional screening report. A storm watch is never a confirmed oil outage
+or a buy/sell signal; existing frozen collectors are unchanged.
+EIA table 9 and explicit-report BSEE adapters now preserve Cushing/refinery
+observations and estimated offshore shut-ins separately. See the
+[5 October collection hardening runbook](docs/collection-hardening-2026-10-05.md)
+for hourly EIA-detail collection, independent release/freshness checks and CI.
+`status` opens existing journals read-only and lists missing journals without
+creating them. Use the deployed run's configuration when inspecting a service;
+a development configuration can point at a different data root.
 The [source development notes](docs/source-development-2026-09-28.md) document
 opt-in official-release detail capture and unresolved source-access qualification.
 
@@ -115,4 +145,5 @@ has been qualified.
 - `deploy/oilbot@.service` — systemd user unit for a single host
 - `docs/observation.md` — operational notes and guardrails
 
-This project intentionally keeps the runtime focused on public oil intelligence and offline research, with no broker or market-data dependencies in the active package graph.
+The base runtime keeps broker SDKs optional. Install the `ibkr` extra only for the
+separate read-only IBKR workflow; the news supervisor never starts that adapter.

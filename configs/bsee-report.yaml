@@ -1,0 +1,40 @@
+# On-demand historical parser canary, NOT a current hurricane monitor.
+# Register each new explicit report as a new source in a new versioned root.
+mode: observe
+pipeline: forward
+broker_execution: disabled
+registry_version: bsee-report-canary-v1
+asset_registry_version: no-verified-bsee-assets-v1
+storage:
+  root: ../data/bsee/20261002-report-v1
+  quote_flush_seconds: 1
+  retention: manual_review_no_automatic_deletion
+market: {provider: disabled, qualified: false}
+extraction:
+  provider: codex_cli
+  model: gpt-5.5
+  binary: codex
+  fallback: null
+  workers: 1
+  daily_attempts: 1
+  timeout_seconds: 60
+  deadline_seconds: 10
+sources:
+  - id: bsee-laura-archive-canary
+    owner: Bureau of Safety and Environmental Enforcement
+    role: official_operator_survey
+    source_type: official_shut_in_estimate
+    url: https://www.bsee.gov/newsroom/latest-news/statements-and-releases/press-releases/bsee-monitors-gulf-of-mexico-oil-and-14
+    adapter: bsee_report
+    parser_contract: bsee-shutin-v1
+    enabled: true
+    allowed_hosts: [www.bsee.gov]
+    poll_seconds: 3600
+    timestamp_precision: unverified_report_date_not_publication_time
+    revision_policy: report_url_and_content_hash
+    qualification: historical_schema_canary_only
+    rights:
+      capture: official_public_report_private_research_only
+      model_processing: prohibited
+      retention: raw_evidence_no_third_party_images
+assets: []

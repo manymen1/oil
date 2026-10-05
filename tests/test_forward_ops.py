@@ -1,10 +1,12 @@
 import importlib.util
 import threading
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from oilbot.cli import record, status
+from oilbot.config import load_config
 from oilbot.sources import NewsCollector
 from oilbot.store import Journal
 from test_forward import setup
@@ -16,6 +18,32 @@ def test_status_uses_aggregates_not_full_payload_reader(setup, monkeypatch):
     result = status(cfg)
     assert result["journals"]["forward"]["forward_start"] == 1
     assert result["market"]["status"] == "DISABLED_NEWS_ONLY"
+
+
+def test_status_missing_root_does_not_create_databases(tmp_path, monkeypatch):
+    cfg = replace(load_config("configs/forward.yaml"), root=tmp_path / "absent")
+    monkeypatch.setattr(Journal, "__init__", lambda *a, **kw: pytest.fail("writable journal opened"))
+    result = status(cfg)
+    assert set(result["missing_journals"]) == {"news", "analysis", "runtime", "forward"}
+    assert result["heartbeats"] == [] and result["attempts_by_day"] == {}
+    assert not cfg.root.exists()
+
+
+def test_status_preserves_budget_cursor_and_heartbeat(setup, monkeypatch):
+    cfg, news, output, worker = setup
+    analysis, runtime = Journal(cfg.db("analysis")), Journal(cfg.db("runtime"))
+    analysis.reserve_attempt(3, at="2026-10-05T01:00:00Z")
+    with news.transaction() as db:
+        news.set_cursor(db, "recovery:index", {"seq": 12})
+    for n in range(4):
+        runtime.append("heartbeat", {"n": n})
+    before = {p.name: p.read_bytes() for p in cfg.root.glob("*.sqlite3")}
+    monkeypatch.setattr(Journal, "__init__", lambda *a, **kw: pytest.fail("writable journal opened"))
+    result = status(cfg)
+    assert result["attempts_by_day"] == {"2026-10-05": 1}
+    assert result["recovery"]["legacy_index"] == {"seq": 12}
+    assert [r["payload"]["n"] for r in result["heartbeats"]] == [1, 2, 3]
+    assert before == {p.name: p.read_bytes() for p in cfg.root.glob("*.sqlite3")}
 
 
 def test_linker_cli_component_is_independent_and_network_free(setup):

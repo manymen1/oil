@@ -9,6 +9,12 @@ The [next milestone](assessment-admission.md) adds automated queue admission and
 receipt-relative response features, with explicit remaining gates.
 The [paper execution milestone](paper-execution.md) subsequently adds a local
 single-contract execution core; live strategy and broker gates remain unmet.
+The subsequent [IBKR/MCL integration](ibkr-paper.md) fixes the selected broker
+and pilot product and adds read-only contract/account discovery and raw market
+capture. It does not yet implement broker order routing or qualified live data.
+The [macro-source and strategy increment](macro-sources-and-strategy.md) adds
+EIA/CFTC structured-data connectors and draft inventory-continuation research,
+without changing the running news deployments or enabling execution.
 The findings below retain their original assessment timestamp rather than being
 silently rewritten after deployment recovery.
 

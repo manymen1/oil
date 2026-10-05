@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import json
 import shutil
 import signal
@@ -32,7 +33,7 @@ def preflight(config):
                          "endpoint_qualification": s["qualification"]} for s in config.sources],
             "blockers": ([] if forward else
                          ["LIVE_MARKET_DATA_UNQUALIFIED", "NO_BROKER_ADAPTER", "SOURCE_MODEL_RIGHTS_REQUIRE_QUALIFICATION"]),
-            "deferred": ["GITHUB_CI", "LIVE_MARKET_DATA", "STRATEGY"] if forward else [],
+            "deferred": ["CI_RUN_UNVERIFIED", "LIVE_MARKET_DATA", "STRATEGY"] if forward else [],
             "pipeline": config.raw.get("pipeline", "reviewed"),
             "forward_recorder_ready": forward,
             "first_party_reviews": [{"source": r["source_id"], "status": r["status"], "scope": r["scope"],
@@ -46,24 +47,35 @@ def preflight(config):
 def status(config):
     output = preflight(config)
     output["journals"] = {}
+    output["missing_journals"] = []
+    output["attempts_by_day"] = {}
+    output["recovery"] = {"indexed_work_by_state": {}, "legacy_index": None}
+    output["heartbeats"] = []
     for name in ("news", "analysis", "runtime", "forward"):
-        store = Journal(config.db(name))
-        with store.connect() as db:
+        path = config.db(name)
+        if not path.exists():
+            output["journals"][name] = {}
+            output["missing_journals"].append(name)
+            continue
+        with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+            db.row_factory = sqlite3.Row
+            db.execute("BEGIN")
             output["journals"][name] = dict(db.execute("SELECT kind,COUNT(*) FROM records GROUP BY kind"))
-    output["attempts_by_day"] = Journal(config.db("analysis")).budget()
-    news = Journal(config.db("news"))
-    with news.connect() as db:
-        output["recovery"] = {"indexed_work_by_state": {r[0]: r[1] for r in db.execute(
-            "SELECT state,COUNT(*) FROM parse_work GROUP BY state")}}
-    output["recovery"]["legacy_index"] = news.cursor("recovery:index")
+            if name == "analysis":
+                output["attempts_by_day"] = dict(db.execute("SELECT day,attempts FROM budget ORDER BY day"))
+            elif name == "news":
+                output["recovery"]["indexed_work_by_state"] = dict(db.execute(
+                    "SELECT state,COUNT(*) FROM parse_work GROUP BY state"))
+                row = db.execute("SELECT value FROM cursors WHERE key='recovery:index'").fetchone()
+                output["recovery"]["legacy_index"] = json.loads(row[0]) if row else None
+            elif name == "runtime":
+                output["heartbeats"] = [{**dict(r), "payload": json.loads(r["payload"])} for r in db.execute(
+                    "SELECT * FROM records WHERE kind='heartbeat' ORDER BY seq DESC LIMIT 3")][::-1]
     if config.raw.get("pipeline") == "forward":
         output["market"] = {"status": "DISABLED_NEWS_ONLY"}
     else:
         records, gaps = read_archive(config.root / "quotes")
         output["market"] = qualify(records, gaps)
-    with Journal(config.db("runtime")).connect() as db:
-        output["heartbeats"] = [{**dict(r), "payload": json.loads(r["payload"])} for r in db.execute(
-            "SELECT * FROM records WHERE kind='heartbeat' ORDER BY seq DESC LIMIT 3")][::-1]
     return output
 
 
@@ -254,12 +266,83 @@ def main(argv=None):
     child.add_argument("--file", type=Path, required=True)
     child.add_argument("--out", type=Path, required=True)
     child.add_argument("--resume", action="store_true")
+    for command in ("ibkr-preflight", "ibkr-capture"):
+        child = sub.add_parser(command, help="IBKR paper read-only diagnostics; never sends orders")
+        child.add_argument("--config", type=Path, default=Path("configs/ibkr-paper.json"))
+        if command == "ibkr-capture":
+            child.add_argument("--connect", action="store_true", required=True, help="Explicitly open the configured paper API socket")
+            child.add_argument("--out", type=Path, required=True)
     child = sub.add_parser("dataset")
     child.add_argument("--manifest", type=Path, required=True)
     child.add_argument("--market", type=Path)
     child.add_argument("--out", type=Path, required=True)
     child.add_argument("--policy", type=Path, required=True)
     child.add_argument("--support", type=Path)
+    for command in ("macro-collect", "macro-import", "macro-recover"):
+        child = sub.add_parser(command, help="Isolated EIA/CFTC numeric observations; no model or orders")
+        child.add_argument("--out", type=Path, required=True)
+        if command != "macro-recover":
+            child.add_argument("--source", choices=("eia", "cftc"), required=True)
+        if command == "macro-import":
+            child.add_argument("--file", type=Path, required=True)
+        if command == "macro-recover":
+            child.add_argument("--delivery", choices=("http", "local_import"), default="http")
+    child = sub.add_parser("macro-research", help="Point-in-time inventory hypothesis and price-only baseline; no orders")
+    child.add_argument("--journal", type=Path, required=True)
+    child.add_argument("--at", required=True)
+    child.add_argument("--manifest", type=Path)
+    child.add_argument("--rules", type=Path, default=Path("configs/inventory-research.json"))
+    child.add_argument("--out", type=Path)
+    child = sub.add_parser("macro-dataset", help="Grouped inventory research and hypothetical MCL outcomes; no orders")
+    child.add_argument("--journal", type=Path, required=True)
+    child.add_argument("--through", required=True)
+    child.add_argument("--manifest", type=Path)
+    child.add_argument("--rules", type=Path, default=Path("configs/inventory-research.json"))
+    child.add_argument("--costs", type=Path, help="OutcomePolicy JSON; defaults are illustrative, not broker-verified")
+    child.add_argument("--out", type=Path, required=True)
+    child = sub.add_parser("macro-evaluate", help="Chronological release-level strategy screen; no promotion or orders")
+    child.add_argument("--dataset", type=Path, required=True)
+    child.add_argument("--holdout-start", required=True)
+    child.add_argument("--horizon", type=int, default=300)
+    child.add_argument("--strategy", default="inventory_continuation_v2")
+    child.add_argument("--extra-round-trip-cost", default="2.00")
+    child.add_argument("--out", type=Path)
+    for command in ("macro-worker", "macro-health"):
+        child = sub.add_parser(command, help="Release-aware macro collection or read-only health; no trading")
+        child.add_argument("--root", type=Path, required=True)
+        child.add_argument("--state", type=Path, required=True)
+        child.add_argument("--config", type=Path, default=Path("configs/macro-scheduler.json"))
+        child.add_argument("--contact-file", type=Path)
+        if command == "macro-worker":
+            mode = child.add_mutually_exclusive_group(required=True)
+            mode.add_argument("--once", action="store_true")
+            mode.add_argument("--serve", action="store_true")
+            mode.add_argument("--run-seconds", type=int)
+    for command in ("eia-detail-collect", "eia-detail-import", "eia-detail-recover"):
+        child = sub.add_parser(command, help="Isolated Cushing/refinery observations; no strategy or orders")
+        child.add_argument("--out", type=Path, required=True)
+        if command == "eia-detail-collect":
+            child.add_argument("--contact-file", type=Path)
+        if command == "eia-detail-import":
+            child.add_argument("--file", type=Path, required=True)
+        if command == "eia-detail-recover":
+            child.add_argument("--delivery", choices=("http", "local_import"), default="http")
+    child = sub.add_parser("eia-detail-health", help="Read-only freshness and release checks; no raw-body scan")
+    child.add_argument("--root", type=Path, required=True)
+    child.add_argument("--config", type=Path, default=Path("configs/macro-scheduler.json"))
+    child = sub.add_parser("eia-detail-report", help="Read-only as-of Cushing/refinery evidence")
+    child.add_argument("--journal", type=Path, required=True)
+    child.add_argument("--at", required=True)
+    child.add_argument("--out", type=Path)
+    child = sub.add_parser("bsee-report", help="Read-only shut-in estimates; no inferred restarts")
+    child.add_argument("--config", default="configs/bsee-report.yaml")
+    child.add_argument("--at", required=True)
+    child.add_argument("--out", type=Path)
+    child = sub.add_parser("weather-report", help="As-of NHC regional research screening; no outage or price inference")
+    child.add_argument("--config", default="configs/weather-forward.yaml")
+    child.add_argument("--regions", type=Path, default=Path("configs/oil-weather-regions.json"))
+    child.add_argument("--at", required=True)
+    child.add_argument("--out", type=Path)
     child = sub.add_parser("event-study")
     child.add_argument("--dataset", type=Path, required=True)
     child.add_argument("--validation-start", required=True)
@@ -280,7 +363,137 @@ def main(argv=None):
             child.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command == "operational-queue":
+        if args.command in {"macro-collect", "macro-import", "macro-recover"}:
+            import os
+            from .macro import MacroRecorder, MAX_BYTES
+            delivery = "local_import" if args.command == "macro-import" else getattr(args, "delivery", "http")
+            worker = MacroRecorder(args.out, delivery=delivery)
+            if args.command == "macro-collect":
+                result = worker.collect(args.source, contact=os.environ.get("OILBOT_SOURCE_CONTACT"))
+            else:
+                with component_lock(worker.root, "macro"):
+                    if args.command == "macro-recover":
+                        result = {"recovered": worker.recover()}
+                    else:
+                        if args.file.stat().st_size > MAX_BYTES:
+                            raise ValueError("macro import exceeds size limit")
+                        result = worker.ingest(args.source, args.file.read_bytes())
+            print(json.dumps(result, indent=2))
+            return 2 if result.get("status") in {"FAILED", "BLOCKED"} else 0
+        elif args.command in {"macro-worker", "macro-health"}:
+            import os
+            from .macro_scheduler import MacroWorker, health, load_contact, load_schedule
+            policy = load_schedule(args.config)
+            contact = load_contact(args.contact_file) if args.contact_file else os.environ.get("OILBOT_SOURCE_CONTACT")
+            if args.command == "macro-health":
+                result = health(args.root, args.state, policy, contact_configured=bool(contact))
+                print(json.dumps(result, indent=2))
+                return 0 if result["status"] == "HEALTHY" else 2
+            worker = MacroWorker(args.root, args.state, policy, contact=contact)
+            if args.once:
+                result = worker.run_once()
+                print(json.dumps(result, indent=2))
+                return 0 if result["health"]["status"] == "HEALTHY" else 2
+            stop = threading.Event()
+            signal.signal(signal.SIGTERM, lambda *_: stop.set())
+            signal.signal(signal.SIGINT, lambda *_: stop.set())
+            worker.run(stop, seconds=args.run_seconds, emit=lambda report: print(json.dumps(report), flush=True))
+            result = {"status": "STOPPED", "trade_authorized": False}
+        elif args.command == "eia-detail-health":
+            from .eia_detail import detail_health
+            from .macro_scheduler import load_schedule
+            result = detail_health(args.root, load_schedule(args.config))
+            print(json.dumps(result, indent=2))
+            return 2 if result["issues"] else 0
+        elif args.command in {"eia-detail-collect", "eia-detail-import", "eia-detail-recover"}:
+            import os
+            from .eia_detail import DetailRecorder
+            from .macro import MAX_BYTES
+            from .macro_scheduler import load_contact
+            delivery = "local_import" if args.command == "eia-detail-import" else getattr(args, "delivery", "http")
+            worker = DetailRecorder(args.out, delivery=delivery)
+            if args.command == "eia-detail-collect":
+                contact = load_contact(args.contact_file) if args.contact_file else os.environ.get("OILBOT_SOURCE_CONTACT")
+                result = worker.collect("eia", contact=contact)
+            else:
+                with component_lock(worker.root, "macro"):
+                    if args.command == "eia-detail-recover":
+                        recovered = worker.recover()
+                        result = {"recovered": recovered, "status": "FAILED" if any(r["status"] == "FAILED" for r in recovered) else "OK"}
+                    else:
+                        if args.file.stat().st_size > MAX_BYTES:
+                            raise ValueError("EIA detail import exceeds size limit")
+                        result = worker.ingest("eia", args.file.read_bytes())
+            print(json.dumps(result, indent=2))
+            return 2 if result.get("status") in {"FAILED", "BLOCKED"} else 0
+        elif args.command in {"eia-detail-report", "bsee-report"}:
+            if args.command == "eia-detail-report":
+                from .eia_detail import detail_report
+                result = detail_report(args.journal, at=args.at)
+                degraded = bool(result["issues"])
+            else:
+                from .bsee import bsee_report
+                result = bsee_report(load_config(args.config), at=args.at)
+                degraded = any(r["issues"] for r in result["reports"])
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                with args.out.open("x") as stream:
+                    json.dump(result, stream, indent=2)
+            print(json.dumps(result, indent=2))
+            return 2 if degraded else 0
+        elif args.command == "weather-report":
+            from .weather import load_regions, weather_report
+            result = weather_report(load_config(args.config), load_regions(args.regions), at=args.at)
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                with args.out.open("x") as stream:
+                    json.dump(result, stream, indent=2)
+        elif args.command == "macro-research":
+            from .clock import epoch_ns
+            from .inventory_strategy import load_inventory_rules, research_macro
+            market = load_manifest(args.manifest)[2] if args.manifest else None
+            if epoch_ns(args.at) > epoch_ns(utc_now()):
+                raise ValueError("cannot evaluate future decisions")
+            result = research_macro(args.journal, at=args.at, market=market,
+                rules=load_inventory_rules(json.loads(args.rules.read_text())))
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                with args.out.open("x") as stream:
+                    json.dump(result, stream, indent=2)
+        elif args.command == "macro-dataset":
+            from .inventory_strategy import load_inventory_rules
+            from .macro_dataset import build_macro_dataset
+            from .outcomes import OutcomePolicy
+            market = load_manifest(args.manifest)[2] if args.manifest else None
+            result = build_macro_dataset(args.journal, args.out, through=args.through, market=market,
+                rules=load_inventory_rules(json.loads(args.rules.read_text())),
+                policy=OutcomePolicy(**json.loads(args.costs.read_text())) if args.costs else OutcomePolicy(),
+                manifest=args.manifest)
+        elif args.command == "macro-evaluate":
+            from .macro_evaluation import evaluate_macro_dataset
+            result = evaluate_macro_dataset(args.dataset, holdout_start=args.holdout_start,
+                horizon_seconds=args.horizon, strategy=args.strategy,
+                extra_round_trip_cost_usd=args.extra_round_trip_cost)
+            if args.out:
+                if args.dataset.resolve() in args.out.resolve().parents:
+                    raise ValueError("evaluation output must be outside the frozen dataset")
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                with args.out.open("x") as stream:
+                    json.dump(result, stream, indent=2)
+        elif args.command in {"ibkr-preflight", "ibkr-capture"}:
+            import os
+            from .ibkr import load_ibkr_config, ibkr_preflight, capture_ibkr
+            config = load_ibkr_config(args.config)
+            if args.command == "ibkr-preflight":
+                result = ibkr_preflight(config)
+            else:
+                stop = threading.Event()
+                signal.signal(signal.SIGTERM, lambda *_: stop.set())
+                signal.signal(signal.SIGINT, lambda *_: stop.set())
+                result = capture_ibkr(config, args.out, account=os.environ.get(config.account_env), stop=stop)
+            print(json.dumps(result, indent=2))
+            return 0 if not result.get("blockers", result.get("connection_blockers")) else 2
+        elif args.command == "operational-queue":
             from .operational import read_queue
             config = load_config(args.config)
             result = read_queue(config.db("forward"), after_seq=args.after_seq, limit=args.limit, include_baseline=args.include_baseline)

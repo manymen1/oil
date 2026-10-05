@@ -56,8 +56,19 @@ def load_config(path: str | Path) -> OilConfig:
             raise ValueError("minimum pilot polling interval is 60 seconds")
         if urlparse(source["url"]).scheme != "https":
             raise ValueError("HTTPS source required")
-        if source["adapter"] not in {"rss", "adnoc", "fujairah", "ukmto", "structured", "ofac", "centcom"}:
+        if source["adapter"] not in {"rss", "adnoc", "fujairah", "ukmto", "structured", "ofac", "centcom", "nhc_json", "bsee_report"}:
             raise ValueError("unknown source adapter")
+        if source["adapter"] == "bsee_report":
+            from .bsee import VERSION, valid_report_url
+            if (not valid_report_url(source["url"]) or source.get("parser_contract") != VERSION
+                    or source.get("allowed_hosts") != ["www.bsee.gov"] or source["poll_seconds"] < 3600
+                    or source.get("rights", {}).get("model_processing") != "prohibited"):
+                raise ValueError("BSEE requires a versioned explicit report, hourly limit and prohibited model processing")
+        if source["adapter"] == "nhc_json":
+            from .weather import ENDPOINT, VERSION
+            if (source["url"] != ENDPOINT or source.get("parser_contract") != VERSION
+                    or source["poll_seconds"] < 300 or source["allowed_hosts"] != ["www.nhc.noaa.gov"]):
+                raise ValueError("version-bound NHC endpoint with at least 300-second polling required")
         if "capture_details" in source and (type(source["capture_details"]) is not bool
                 or source["adapter"] not in {"ofac", "centcom"}):
             raise ValueError("capture_details requires a boolean and an official release adapter")

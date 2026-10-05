@@ -1,0 +1,40 @@
+# Isolated optional NHC collection. Does not modify frozen news/macro services.
+mode: observe
+pipeline: forward
+broker_execution: disabled
+registry_version: nhc-weather-sources-v1
+asset_registry_version: no-verified-weather-assets-v1
+storage:
+  root: ../data/weather/20261002-nhc-v1
+  quote_flush_seconds: 1
+  retention: manual_review_no_automatic_deletion
+market: {provider: disabled, qualified: false}
+extraction:
+  provider: codex_cli
+  model: gpt-5.5
+  binary: codex
+  fallback: null
+  workers: 1
+  daily_attempts: 1
+  timeout_seconds: 60
+  deadline_seconds: 10
+  # Legacy config schema only; model analysis is disabled for forward pipeline.
+sources:
+  - id: nhc
+    owner: NOAA National Hurricane Center
+    role: weather_authority
+    source_type: official_weather
+    url: https://www.nhc.noaa.gov/CurrentStorms.json
+    adapter: nhc_json
+    parser_contract: nhc-status-v1
+    enabled: true
+    allowed_hosts: [www.nhc.noaa.gov]
+    poll_seconds: 300
+    timestamp_precision: nominal_advisory_issuance_not_verified_publication
+    revision_policy: storm_id_advisory_identity_and_content_hash
+    qualification: official_endpoint_documented_canary_only_no_delivery_SLA
+    rights:
+      capture: NWS_public_data_research_with_attribution
+      model_processing: prohibited
+      retention: private_research_no_third_party_map_or_graphic_capture
+assets: []

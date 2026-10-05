@@ -1,0 +1,18 @@
+{
+  "schema": "oil-weather-screen-v1",
+  "purpose": "heuristic_geographic_screen_only",
+  "max_poll_age_seconds": 900,
+  "max_advisory_age_seconds": 32400,
+  "regions": [
+    {
+      "id": "northern_gulf_research_box",
+      "label": "Broad northern Gulf / US Gulf Coast research screen",
+      "south": 24,
+      "north": 31,
+      "west": -98,
+      "east": -80,
+      "basis": "Analyst-defined rough box, not a verified asset inventory or hazard boundary",
+      "possible_channels_to_investigate": ["offshore production", "refinery operations", "port and tanker activity"]
+    }
+  ]
+}

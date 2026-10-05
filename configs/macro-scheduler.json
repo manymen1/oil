@@ -1,0 +1,43 @@
+{
+  "schema": "macro-scheduler-v1",
+  "timezone": "America/New_York",
+  "calendar_start": "2026-09-01",
+  "calendar_end": "2027-01-01",
+  "reviewed_at": "2026-09-30",
+  "tick_seconds": 15,
+  "heartbeat_stale_seconds": 180,
+  "sources": {
+    "eia": {
+      "schedule_url": "https://www.eia.gov/petroleum/supply/weekly/schedule.php",
+      "weekday": 2,
+      "release_time": "10:30",
+      "period_lag_days": 5,
+      "window_before_seconds": 600,
+      "window_after_seconds": 3600,
+      "window_poll_seconds": 60,
+      "background_poll_seconds": 21600,
+      "publication_grace_seconds": 300,
+      "overrides": {
+        "2026-09-09": "2026-09-10T12:00:00",
+        "2026-10-14": "2026-10-15T12:00:00",
+        "2026-11-11": "2026-11-12T12:00:00"
+      }
+    },
+    "cftc": {
+      "schedule_url": "https://www.cftc.gov/MarketReports/CommitmentsofTraders/ReleaseSchedule/index.htm",
+      "weekday": 4,
+      "release_time": "15:30",
+      "period_lag_days": 3,
+      "window_before_seconds": 0,
+      "window_after_seconds": 14400,
+      "window_poll_seconds": 3600,
+      "background_poll_seconds": 86400,
+      "publication_grace_seconds": 14400,
+      "overrides": {
+        "2026-11-13": "2026-11-16T15:30:00",
+        "2026-11-27": "2026-11-30T15:30:00",
+        "2026-12-25": "2026-12-28T15:30:00"
+      }
+    }
+  }
+}
