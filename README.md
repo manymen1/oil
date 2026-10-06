@@ -1,9 +1,9 @@
 # oilbot
 
-Standalone oil observation and research application. Current priority: **forward
-news recording**, local deterministic event candidates, and auditable incident
-lineage. The current milestone is a durable geopolitical-news dataset.
-Development also includes local paper execution and an opt-in read-only IBKR/MCL
+Standalone oil observation and research application. Current priority: synchronized
+CL1/CL2/MCL1 recording and a frozen EIA shadow pilot, alongside **forward news
+recording**, local event candidates, and auditable incident lineage.
+Development also includes local paper execution and an opt-in read-only IBKR
 connection and quote-capture path. Broker order execution and strategy activation
 remain disabled; live market data is not yet qualified.
 
@@ -79,6 +79,11 @@ adds sustained CL/MCL confirmation, calendar-spread agreement and a cost screen,
 while retaining the original strategy as a baseline. `macro-evaluate` adds a
 release-grouped chronological holdout comparison; it never promotes a strategy
 or treats hypothetical results as proof of a profitable trading edge.
+The [geopolitical news research workflow](docs/geopolitical-news-research.md)
+separates risk-premium claims from reviewed physical transitions, reuses the
+cost-aware continuation filter and compares chronological, overlap-grouped news
+baselines. It runs offline and never turns a headline into confirmed supply loss
+or authorizes an order.
 The [oil-price drivers and source coverage](docs/oil-price-drivers-and-sources.md)
 maps the research priorities and adds an isolated NOAA/NHC weather adapter and
 as-of regional screening report. A storm watch is never a confirmed oil outage
@@ -147,3 +152,9 @@ has been qualified.
 
 The base runtime keeps broker SDKs optional. Install the `ibkr` extra only for the
 separate read-only IBKR workflow; the news supervisor never starts that adapter.
+## Roadmap implementation
+
+The read-only CL1/CL2/MCL1 recorder, frozen forward EIA pilot, actual decision
+journal, paired economic diagnostics and verified recovery workflow are described
+in [the 6 October implementation runbook](docs/roadmap-implementation-2026-10-06.md).
+Market access and qualification remain gated; broker orders are disabled.

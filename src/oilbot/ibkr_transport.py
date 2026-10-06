@@ -42,7 +42,7 @@ def make_client(EWrapper, EClient, emit, account, closing):
                 "localSymbol", "tradingClass", "lastTradeDateOrContractMonth")}
             payload["multiplier"] = str(c.multiplier)
             payload.update({k: getattr(details, k, "") for k in ("contractMonth", "realExpirationDate",
-                "timeZoneId", "tradingHours", "liquidHours")})
+                "lastTradeTime", "timeZoneId", "tradingHours", "liquidHours")})
             payload["minTick"] = str(details.minTick)
             emit("contract", {"reqId": reqId, "details": payload})
 
@@ -147,6 +147,46 @@ class IBKRTransport:
             if self.client.isConnected():
                 if self.subscribed:
                     self.client.cancelTickByTickData(2001)
+                self.client.cancelPositions()
+        finally:
+            self.client.disconnect()
+            if self.thread:
+                self.thread.join(timeout=2)
+                if self.thread.is_alive():
+                    raise RuntimeError("SDK reader did not stop")
+
+
+class IBKRCurveTransport(IBKRTransport):
+    """Three explicit BidAsk subscriptions. Inherits the order-operation guards."""
+
+    def __init__(self, config, account):
+        super().__init__(config, account)
+        self.subscription_ids = []
+
+    def discover(self):
+        for req_id, product, multiplier in ((1001, "CL", "1000"), (1002, "MCL", "100")):
+            contract = self.Contract()
+            contract.symbol, contract.secType, contract.exchange = product, "FUT", "NYMEX"
+            contract.currency, contract.multiplier = "USD", multiplier
+            contract.includeExpired = False
+            self.client.reqContractDetails(req_id, contract)
+        self.client.reqPositions()
+        self.client.reqAllOpenOrders()
+
+    def subscribe(self, selected):
+        # Tick-by-tick is requested without historical backfill or size suppression.
+        for req_id, role in ((2001, "CL1"), (2002, "CL2"), (2003, "MCL1")):
+            contract = self.Contract()
+            contract.conId, contract.exchange = selected[role]["conId"], "NYMEX"
+            self.subscription_ids.append(req_id)
+            self.client.reqTickByTickData(req_id, contract, "BidAsk", 0, False)
+
+    def close(self):
+        self.closing.set()
+        try:
+            if self.client.isConnected():
+                for req_id in self.subscription_ids:
+                    self.client.cancelTickByTickData(req_id)
                 self.client.cancelPositions()
         finally:
             self.client.disconnect()

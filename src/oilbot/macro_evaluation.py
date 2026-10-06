@@ -4,6 +4,7 @@ No optimization, model fitting, random revision split or execution authorization
 Even a positive screen is insufficient to establish a deployable trading edge.
 """
 from collections import Counter, defaultdict
+from dataclasses import asdict
 from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
@@ -14,6 +15,7 @@ from .inventory_strategy import load_inventory_rules
 from .macro_dataset import comparisons
 from .outcomes import HORIZONS, OutcomePolicy
 from .schema import digest
+from .research_stats import paired_uncertainty, contribution_diagnostics, stressed_samples
 
 
 def summarize(samples, names, stress, contracts):
@@ -40,10 +42,63 @@ def summarize(samples, names, stress, contracts):
     return result
 
 
+def _collect_samples(groups, *, delay, policy, names, rules_hash, horizon_seconds, cutoff, split):
+    excluded, excluded_reasons, samples = Counter(), Counter(), {"train": [], "holdout": []}
+    for group, revisions in groups.items():
+        selected = []
+        for row in revisions:
+            labels = row.get("latency_scenarios", {}).get(str(delay)) if delay else row
+            comparison = ((labels or {}).get("comparisons") or {}).get(str(horizon_seconds))
+            if not comparison or comparison["state"] != "COMPARABLE":
+                excluded[comparison["state"] if comparison else
+                         "NO_COMPARISON_LABELS" if row["state"] == "EVALUATED" else row["state"]] += 1
+                excluded_reasons.update(row["comparison_exclusions"])
+                continue
+            if row["comparison_exclusions"] or row["initial_snapshot"] or row["revision"]:
+                raise ValueError("ineligible release marked comparable")
+            decision, outcomes = row["decision"], labels["outcomes"]
+            if decision["rules_hash"] != rules_hash or outcomes["assumptions"] != asdict(policy):
+                raise ValueError("row policy mismatch")
+            if set(decision["baselines"]) != set(names):
+                raise ValueError("inconsistent baseline population")
+            rebuilt = comparisons(decision, outcomes, [], policy.contracts)[str(horizon_seconds)]
+            if rebuilt != comparison:
+                raise ValueError("comparison does not match execution labels")
+            end = epoch_ns(row["decision_at"]) + horizon_seconds * 10**9 + policy.delay_ms * 10**6
+            if end > cutoff or epoch_ns(row["decision_at"]) < epoch_ns(row["available_at"]):
+                raise ValueError("immature or noncausal comparison")
+            values = {}
+            for name in names:
+                label = comparison["baselines"][name]
+                side, pnl = label["direction"], Decimal(label["net_pnl"])
+                if type(side) is not int or side not in {-1, 0, 1} or not pnl.is_finite() or (side == 0 and pnl != 0):
+                    raise ValueError("invalid comparison value")
+                values[name] = (side, pnl)
+            selected.append({"release_group": group, "decision_at": row["decision_at"],
+                             "end_ns": end, "values": values})
+        if len(selected) > 1:
+            raise ValueError("multiple comparable revisions in one release group")
+        if not selected:
+            continue
+        sample = selected[0]
+        first_receipt = min(epoch_ns(r["received_at"]) for r in revisions)
+        if first_receipt < split and sample["end_ns"] >= split:
+            excluded["PURGED_BOUNDARY_OVERLAP"] += 1
+            continue
+        samples["train" if first_receipt < split else "holdout"].append(sample)
+    for values in samples.values():
+        values.sort(key=lambda r: (epoch_ns(r["decision_at"]), r["release_group"]))
+        if any(a["end_ns"] >= epoch_ns(b["decision_at"]) for a, b in zip(values, values[1:])):
+            raise ValueError("overlapping release outcomes require a portfolio simulator")
+    return samples, excluded, excluded_reasons
+
+
 def evaluate_macro_dataset(directory, *, holdout_start, horizon_seconds=300,
                            strategy="inventory_continuation_v2", minimum_train_groups=52,
                            minimum_holdout_groups=26, minimum_holdout_trades=10,
-                           extra_round_trip_cost_usd="2.00"):
+                           extra_round_trip_cost_usd="2.00", bootstrap_block_groups=4,
+                           bootstrap_draws=2000, bootstrap_seed=1729, fixed_monthly_cost_usd=None,
+                           latency_extra_ms=0):
     if type(horizon_seconds) is not int or horizon_seconds not in HORIZONS:
         raise ValueError("supported preselected horizon required")
     for value in (minimum_train_groups, minimum_holdout_groups, minimum_holdout_trades):
@@ -55,6 +110,8 @@ def evaluate_macro_dataset(directory, *, holdout_start, horizon_seconds=300,
         raise ValueError("invalid cost stress decimal") from exc
     if not stress.is_finite() or stress < 0:
         raise ValueError("finite nonnegative cost stress required")
+    if type(latency_extra_ms) is not int or not 0 <= latency_extra_ms <= 60000:
+        raise ValueError("additional latency must be 0..60000 milliseconds")
     root = Path(directory).resolve()
     metadata = json.loads((root / "dataset.json").read_text())
     if metadata["schema"] != "macro-research-dataset-v1" or metadata["trade_authorized"] or metadata["promotion"]:
@@ -67,6 +124,23 @@ def evaluate_macro_dataset(directory, *, holdout_start, horizon_seconds=300,
         raise ValueError("dataset rules hash mismatch")
     policy = OutcomePolicy(**metadata["outcome_policy"])
     policy.validate()
+    if metadata.get("pipeline") == "frozen_prospective_shadow":
+        from .macro_shadow import verify_shadow_protocol
+        protocol = verify_shadow_protocol(metadata["protocol"])
+        spec, method = protocol["spec"], protocol["spec"]["statistical_method"]
+        if metadata.get("protocol_id") != protocol["id"] or epoch_ns(metadata["through"]) < epoch_ns(spec["evaluation_end"]):
+            raise ValueError("holdout remains locked until the predeclared evaluation end")
+        requested = (epoch_ns(holdout_start), horizon_seconds, strategy, minimum_train_groups, minimum_holdout_groups,
+            minimum_holdout_trades, bootstrap_block_groups, bootstrap_draws, bootstrap_seed, fixed_monthly_cost_usd)
+        frozen = (epoch_ns(spec["holdout_start"]), spec["horizon_seconds"], "inventory_continuation_v2", method["minimum_train_groups"],
+            method["minimum_holdout_groups"], method["minimum_holdout_trades"], method["block_groups"], method["draws"], method["seed"], spec["fixed_monthly_cost_usd"])
+        if (requested != frozen or stress not in {Decimal(v) for v in spec["extra_round_trip_costs_usd"]}
+                or latency_extra_ms not in spec["latency_stress_ms"] or metadata["rules"] != spec["rules"]
+                or metadata["outcome_policy"] != spec["outcome_policy"]):
+            raise ValueError("evaluation settings differ from frozen shadow protocol")
+    elif latency_extra_ms:
+        raise ValueError("latency scenarios require a frozen prospective dataset")
+    policy = OutcomePolicy(**{**asdict(policy), "delay_ms": policy.delay_ms + latency_extra_ms})
     if rules.version == "inventory-continuation-v2-draft" and (
             Decimal(rules.fee_per_contract_side) != Decimal(policy.fee_per_contract_side)
             or rules.slippage_ticks_per_side != policy.slippage_ticks_per_side):
@@ -97,7 +171,8 @@ def evaluate_macro_dataset(directory, *, holdout_start, horizon_seconds=300,
     for group, revisions in groups.items():
         selected = []
         for row in revisions:
-            comparison = (row.get("comparisons") or {}).get(str(horizon_seconds))
+            labels = row.get("latency_scenarios", {}).get(str(latency_extra_ms)) if latency_extra_ms else row
+            comparison = ((labels or {}).get("comparisons") or {}).get(str(horizon_seconds))
             if not comparison or comparison["state"] != "COMPARABLE":
                 excluded[comparison["state"] if comparison else
                          "NO_COMPARISON_LABELS" if row["state"] == "EVALUATED" else row["state"]] += 1
@@ -105,8 +180,8 @@ def evaluate_macro_dataset(directory, *, holdout_start, horizon_seconds=300,
                 continue
             if row["comparison_exclusions"] or row["initial_snapshot"] or row["revision"]:
                 raise ValueError("ineligible release marked comparable")
-            decision, outcomes = row["decision"], row["outcomes"]
-            if decision["rules_hash"] != metadata["rules_hash"] or outcomes["assumptions"] != metadata["outcome_policy"]:
+            decision, outcomes = row["decision"], labels["outcomes"]
+            if decision["rules_hash"] != metadata["rules_hash"] or outcomes["assumptions"] != asdict(policy):
                 raise ValueError("row policy mismatch")
             if set(decision["baselines"]) != set(names):
                 raise ValueError("inconsistent baseline population")
@@ -160,10 +235,21 @@ def evaluate_macro_dataset(directory, *, holdout_start, horizon_seconds=300,
                 reasons.append("NO_INCREMENTAL_PNL_OVER:" + baseline)
     settings = {"holdout_start": holdout_start, "horizon_seconds": horizon_seconds, "strategy": strategy,
         "minimum_train_groups": minimum_train_groups, "minimum_holdout_groups": minimum_holdout_groups,
-        "minimum_holdout_trades": minimum_holdout_trades, "extra_round_trip_cost_usd": str(stress)}
+        "minimum_holdout_trades": minimum_holdout_trades, "extra_round_trip_cost_usd": str(stress),
+        "bootstrap_block_groups": bootstrap_block_groups, "bootstrap_draws": bootstrap_draws,
+        "bootstrap_seed": bootstrap_seed, "fixed_monthly_cost_usd": fixed_monthly_cost_usd,
+        "latency_extra_ms": latency_extra_ms}
     return {"schema": "macro-holdout-screen-v1", "settings": settings, "settings_hash": digest(settings),
         "dataset_hash": digest(metadata), "dataset_role": metadata["dataset_role"],
         "summary": summaries, "holdout_cost_stress": stressed,
+        "holdout_uncertainty": paired_uncertainty(samples["holdout"], names, strategy,
+            block_groups=bootstrap_block_groups, draws=bootstrap_draws, seed=bootstrap_seed),
+        "contribution_diagnostics": contribution_diagnostics(samples["holdout"], names,
+            contracts=policy.contracts, fixed_monthly_cost_usd=fixed_monthly_cost_usd),
+        "denominator": {"captured_release_groups": len(groups), "research_rows": len(rows),
+            "comparable_train_groups": len(samples["train"]), "comparable_holdout_groups": len(samples["holdout"]),
+            "unscored_groups": len(groups) - sum(len(v) for v in samples.values()),
+            "expected_release_count": None, "expected_release_calendar": "not_available_in_counterfactual_dataset"},
         "included_release_groups": {part: [r["release_group"] for r in values] for part, values in samples.items()},
         "excluded_row_counts": dict(excluded), "excluded_reason_counts": dict(excluded_reasons), "reason_codes": reasons,
         "result": "INSUFFICIENT_EVIDENCE" if not sufficient else "REJECTED_BY_RESEARCH_SCREEN" if reasons else "RESEARCH_SCREEN_PASSED",

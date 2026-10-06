@@ -79,14 +79,30 @@ def continuation_decision(eia, cot, features, *, at, rules):
               "cost_assumptions": {"fee_per_contract_side": rules.fee_per_contract_side,
                                    "slippage_ticks_per_side": rules.slippage_ticks_per_side,
                                    "verified_broker_costs": False}}
-    reasons = result["reason_codes"]
-    side = base["hypothesis_direction"]
+    check = continuation_market_filter(features, received_at=eia["payload"]["received_at"] if eia else None,
+                                       at=at, side=base["hypothesis_direction"], rules=rules)
+    result["reason_codes"].extend(check["reason_codes"])
+    result["continuation_metrics"] = check["metrics"]
+    result["action"] = "ABSTAIN" if result["reason_codes"] else "RESEARCH_CANDIDATE"
+    result["baselines"]["inventory_continuation_v2"] = base["hypothesis_direction"] if not result["reason_codes"] else 0
+    result["limitations"] = [*base["limitations"],
+        "Observed confirmation is not expected future profit or proof of causality.",
+        "Cost inputs are illustrative, not verified IBKR fees or fill guarantees.",
+        "Persistence and calendar-spread filters are unvalidated hypotheses."]
+    return result
+
+
+def continuation_market_filter(features, *, received_at, at, side, rules):
+    """Shared market-only filter; accepts no inventory facts or forward labels."""
+    rules.validate()
+    if type(side) is not int or side not in {-1, 0, 1}:
+        raise ValueError("signed hypothesis required")
+    reasons, metrics = [], {}
     context = features.get("continuation_v2") if features else None
-    metrics = result["continuation_metrics"]
-    if not context or not eia:
+    if not context or not received_at:
         reasons.append("MISSING_CONTINUATION_CONTEXT")
     else:
-        expected = {"receipt": eia["payload"]["received_at"], "decision": at,
+        expected = {"receipt": received_at, "decision": at,
                     "persistence_start": iso_ns(epoch_ns(at) - rules.persistence_seconds * 10**9)}
         if (context["schema"] != "inventory-continuation-features-v2"
                 or any(epoch_ns(context["anchors"][k]) != epoch_ns(v) for k, v in expected.items())):
@@ -149,10 +165,4 @@ def continuation_decision(eia, cot, features, *, at, rules):
             metrics["signed_calendar_spread_change"] = str(curve_change)
             if curve_change < 0:
                 reasons.append("CALENDAR_SPREAD_CONTRADICTS")
-    result["action"] = "ABSTAIN" if reasons else "RESEARCH_CANDIDATE"
-    result["baselines"]["inventory_continuation_v2"] = side if not reasons else 0
-    result["limitations"] = [*base["limitations"],
-        "Observed confirmation is not expected future profit or proof of causality.",
-        "Cost inputs are illustrative, not verified IBKR fees or fill guarantees.",
-        "Persistence and calendar-spread filters are unvalidated hypotheses."]
-    return result
+    return {"reason_codes": reasons, "metrics": metrics}

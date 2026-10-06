@@ -88,6 +88,7 @@ class MarketTiming:
     exchange_event_ns: int | None = None
     provider_receive_ns: int | None = None
     local_receive_ns: int | None = None
+    local_available_ns: int | None = None
     availability_basis: str = "fixture"
     sequence_scope: str = "instrument"
     source_record_id: str | None = None
@@ -98,11 +99,12 @@ class MarketTiming:
             raise ValueError("invalid market flags")
         if self.contract_month is not None and self.contract_month != definition.month:
             raise ValueError("contract month mismatch")
-        for value in (self.exchange_event_ns, self.provider_receive_ns, self.local_receive_ns):
+        for value in (self.exchange_event_ns, self.provider_receive_ns, self.local_receive_ns, self.local_available_ns):
             if value is not None and (type(value) is not int or value < 0):
                 raise ValueError("invalid nanosecond timestamp")
         basis = {"fixture": None, "local_receive": self.local_receive_ns,
-                 "provider_receive_proxy": self.provider_receive_ns}
+                 "provider_receive_proxy": self.provider_receive_ns,
+                 "local_processing": self.local_available_ns}
         if self.availability_basis not in basis:
             raise ValueError("unknown availability basis")
         if self.availability_basis != "fixture" and basis[self.availability_basis] != epoch_ns(self.available_at):

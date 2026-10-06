@@ -78,6 +78,16 @@ class MarketView:
             if gap.get("instrument_id") not in {None, instrument}:
                 continue
             at = gap.get("available_at")
+            if at is not None and epoch_ns(at) > hi:
+                continue
+            if gap.get("start_at") is not None:
+                # An observed outage interval must also veto windows wholly
+                # inside it, even when its closure was recorded later.
+                left = epoch_ns(gap["start_at"])
+                right = epoch_ns(gap["end_at"]) if gap.get("end_at") else hi
+                if left <= hi and right >= lo:
+                    return True
+                continue
             if at is None or lo <= epoch_ns(at) <= hi:
                 return True
         for status in self.statuses[instrument]:

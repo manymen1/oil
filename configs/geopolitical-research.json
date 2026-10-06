@@ -1,0 +1,5 @@
+{
+  "version": "geopolitical-continuation-v1-draft",
+  "max_classifier_delay_seconds": 10,
+  "max_publication_age_seconds": 180
+}

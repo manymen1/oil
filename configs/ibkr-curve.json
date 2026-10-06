@@ -1,0 +1,15 @@
+{
+  "mode": "paper_read_only",
+  "product": "MCL",
+  "host": "127.0.0.1",
+  "port": 4002,
+  "client_id": 72,
+  "account_env": "OILBOT_IBKR_PAPER_ACCOUNT",
+  "paper_session_confirmed": false,
+  "timeout_seconds": 15,
+  "capture_seconds": 1800,
+  "roll_buffer_days": 7,
+  "max_tick_age_seconds": 2,
+  "stream_stale_seconds": 30,
+  "reconnect_seconds": 30
+}

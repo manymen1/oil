@@ -272,6 +272,55 @@ def main(argv=None):
         if command == "ibkr-capture":
             child.add_argument("--connect", action="store_true", required=True, help="Explicitly open the configured paper API socket")
             child.add_argument("--out", type=Path, required=True)
+    for command in ("market-preflight", "market-capture", "market-watch"):
+        child = sub.add_parser(command, help="Read-only CL1/CL2/MCL1 recording; never submits orders")
+        child.add_argument("--config", type=Path, default=Path("configs/ibkr-curve.json"))
+        if command != "market-preflight":
+            child.add_argument("--connect", action="store_true", required=True)
+            child.add_argument("--root", type=Path, required=True)
+    for command in ("market-health", "market-snapshot"):
+        child = sub.add_parser(command)
+        child.add_argument("--journal", type=Path, required=True)
+        if command == "market-snapshot":
+            child.add_argument("--through", required=True)
+            child.add_argument("--out", type=Path, required=True)
+    child = sub.add_parser("shadow-freeze", help="Freeze a prospective EIA experiment before its start")
+    child.add_argument("--spec", type=Path, default=Path("configs/eia-shadow.json"))
+    child.add_argument("--calendar", type=Path, default=Path("configs/macro-scheduler.json"))
+    child.add_argument("--out", type=Path, required=True)
+    child = sub.add_parser("shadow-worker", help="Record actual forward decisions, including missed windows; no orders")
+    child.add_argument("--protocol", type=Path, required=True)
+    child.add_argument("--macro-journal", type=Path, required=True)
+    child.add_argument("--market-journal", type=Path)
+    child.add_argument("--root", type=Path, required=True)
+    child.add_argument("--once", action="store_true")
+    child = sub.add_parser("shadow-dataset", help="Label recorded shadow decisions without rebuilding earlier decisions")
+    child.add_argument("--protocol", type=Path, required=True)
+    child.add_argument("--shadow-journal", type=Path, required=True)
+    child.add_argument("--macro-journal", type=Path, required=True)
+    child.add_argument("--market-journal", type=Path)
+    child.add_argument("--through", required=True)
+    child.add_argument("--out", type=Path, required=True)
+    child = sub.add_parser("shadow-evaluate", help="Frozen comparisons; holdout locked until the declared end")
+    child.add_argument("--protocol", type=Path, required=True)
+    child.add_argument("--dataset", type=Path, required=True)
+    child.add_argument("--out", type=Path)
+    child = sub.add_parser("shadow-health", help="Read-only shadow heartbeat and expected-release checks; no PnL inspection")
+    child.add_argument("--protocol", type=Path, required=True)
+    child.add_argument("--journal", type=Path, required=True)
+    child = sub.add_parser("research-readiness", help="Read-only recording and research blockers")
+    child.add_argument("--macro-root", type=Path, default=Path("data/macro/20260929-official-v1"))
+    child.add_argument("--macro-state", type=Path, default=Path("data/macro-scheduler/20260930-v1"))
+    child.add_argument("--calendar", type=Path, default=Path("configs/macro-scheduler.json"))
+    child.add_argument("--curve-config", type=Path, default=Path("configs/ibkr-curve.json"))
+    child.add_argument("--news-config", type=Path)
+    child.add_argument("--out", type=Path)
+    child = sub.add_parser("research-backup", help="Read-only SQLite snapshots and a local restore verification")
+    child.add_argument("--journal", action="append", required=True, help="Unique NAME=PATH; repeat for each journal")
+    child.add_argument("--out", type=Path, required=True)
+    child = sub.add_parser("research-restore", help="Verify and restore a backup to a new directory")
+    child.add_argument("--manifest", type=Path, required=True)
+    child.add_argument("--out", type=Path, required=True)
     child = sub.add_parser("dataset")
     child.add_argument("--manifest", type=Path, required=True)
     child.add_argument("--market", type=Path)
@@ -305,6 +354,20 @@ def main(argv=None):
     child.add_argument("--holdout-start", required=True)
     child.add_argument("--horizon", type=int, default=300)
     child.add_argument("--strategy", default="inventory_continuation_v2")
+    child.add_argument("--extra-round-trip-cost", default="2.00")
+    child.add_argument("--fixed-monthly-cost", help="Optional explicit research assumption; no profit forecast")
+    child.add_argument("--out", type=Path)
+    child = sub.add_parser("geopolitical-dataset", help="Snapshot-bound risk claims and reviewed physical transitions; no orders")
+    child.add_argument("--manifest", type=Path, required=True)
+    child.add_argument("--market-manifest", type=Path)
+    child.add_argument("--assessments", type=Path)
+    child.add_argument("--through", required=True)
+    child.add_argument("--rules", type=Path, default=Path("configs/geopolitical-research.json"))
+    child.add_argument("--out", type=Path, required=True)
+    child = sub.add_parser("geopolitical-evaluate", help="Conservative chronological news comparison; descriptive only")
+    child.add_argument("--dataset", type=Path, required=True)
+    child.add_argument("--holdout-start", required=True)
+    child.add_argument("--horizon", type=int, default=300)
     child.add_argument("--extra-round-trip-cost", default="2.00")
     child.add_argument("--out", type=Path)
     for command in ("macro-worker", "macro-health"):
@@ -469,17 +532,106 @@ def main(argv=None):
                 rules=load_inventory_rules(json.loads(args.rules.read_text())),
                 policy=OutcomePolicy(**json.loads(args.costs.read_text())) if args.costs else OutcomePolicy(),
                 manifest=args.manifest)
+        elif args.command == "geopolitical-dataset":
+            from .geopolitical import GeopoliticalRules, build_geopolitical_dataset
+            from .story_review import Archive
+            if args.market_manifest and args.market_manifest.resolve().parent in args.out.resolve().parents:
+                raise ValueError("output must be outside the market snapshot")
+            result = build_geopolitical_dataset(Archive(args.manifest), args.out, through=args.through,
+                assessments=args.assessments, market=load_manifest(args.market_manifest)[2] if args.market_manifest else None,
+                rules=GeopoliticalRules(**json.loads(args.rules.read_text())))
+        elif args.command == "geopolitical-evaluate":
+            from .geopolitical_evaluation import evaluate_geopolitical
+            result = evaluate_geopolitical(args.dataset, holdout_start=args.holdout_start,
+                horizon_seconds=args.horizon, extra_round_trip_cost_usd=args.extra_round_trip_cost)
+            if args.out:
+                if args.dataset.resolve() in args.out.resolve().parents:
+                    raise ValueError("output must be outside the frozen dataset")
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                with args.out.open("x") as stream:
+                    json.dump(result, stream, indent=2)
         elif args.command == "macro-evaluate":
             from .macro_evaluation import evaluate_macro_dataset
             result = evaluate_macro_dataset(args.dataset, holdout_start=args.holdout_start,
                 horizon_seconds=args.horizon, strategy=args.strategy,
-                extra_round_trip_cost_usd=args.extra_round_trip_cost)
+                extra_round_trip_cost_usd=args.extra_round_trip_cost, fixed_monthly_cost_usd=args.fixed_monthly_cost)
             if args.out:
                 if args.dataset.resolve() in args.out.resolve().parents:
                     raise ValueError("evaluation output must be outside the frozen dataset")
                 args.out.parent.mkdir(parents=True, exist_ok=True)
                 with args.out.open("x") as stream:
                     json.dump(result, stream, indent=2)
+        elif args.command in {"market-preflight", "market-capture", "market-watch"}:
+            import os
+            from .market_curve import load_curve_config, curve_preflight, capture_curve, watch_curve
+            config = load_curve_config(args.config)
+            if args.command == "market-preflight":
+                result = curve_preflight(config)
+            else:
+                stop = threading.Event()
+                signal.signal(signal.SIGTERM, lambda *_: stop.set())
+                signal.signal(signal.SIGINT, lambda *_: stop.set())
+                result = (watch_curve if args.command == "market-watch" else capture_curve)(config, args.root,
+                    account=os.environ.get(config.account_env), stop=stop)
+            print(json.dumps(result, indent=2))
+            return 2 if result.get("blockers", result.get("connection_blockers")) else 0
+        elif args.command == "market-health":
+            from .market_curve import curve_health
+            result = curve_health(args.journal)
+            print(json.dumps(result, indent=2))
+            return 2 if result["state"] == "DEGRADED" else 0
+        elif args.command == "market-snapshot":
+            from .market_curve import export_curve
+            result = export_curve(args.journal, args.out, through=args.through)
+        elif args.command == "shadow-freeze":
+            from .macro_shadow import freeze_shadow
+            result = freeze_shadow(json.loads(args.spec.read_text()), json.loads(args.calendar.read_text()), args.out)
+        elif args.command == "shadow-worker":
+            from .macro_shadow import shadow_worker
+            stop = threading.Event()
+            signal.signal(signal.SIGTERM, lambda *_: stop.set())
+            signal.signal(signal.SIGINT, lambda *_: stop.set())
+            result = shadow_worker(args.protocol, args.macro_journal, args.market_journal, args.root, stop=stop, once=args.once)
+        elif args.command == "shadow-dataset":
+            from .macro_shadow import build_shadow_dataset
+            result = build_shadow_dataset(args.protocol, args.shadow_journal, args.macro_journal,
+                args.market_journal, args.out, through=args.through)
+        elif args.command == "shadow-evaluate":
+            from .macro_shadow import evaluate_shadow_dataset
+            result = evaluate_shadow_dataset(args.protocol, args.dataset)
+            if args.out:
+                if args.dataset.resolve() in args.out.resolve().parents:
+                    raise ValueError("evaluation output must be outside the frozen dataset")
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                with args.out.open("x") as stream:
+                    json.dump(result, stream, indent=2)
+        elif args.command == "shadow-health":
+            from .macro_shadow import shadow_health
+            result = shadow_health(args.protocol, args.journal)
+            print(json.dumps(result, indent=2))
+            return 2 if result["state"] == "DEGRADED" else 0
+        elif args.command == "research-readiness":
+            from .research_readiness import research_readiness
+            result = research_readiness(macro_root=args.macro_root, macro_state=args.macro_state,
+                schedule_path=args.calendar, curve_config_path=args.curve_config, news_config=args.news_config)
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                with args.out.open("x") as stream:
+                    json.dump(result, stream, indent=2)
+            print(json.dumps(result, indent=2))
+            return 2 if result["state"] == "BLOCKED" else 0
+        elif args.command == "research-backup":
+            from .research_readiness import backup_research
+            journals = {}
+            for item in args.journal:
+                name, separator, path = item.partition("=")
+                if not separator or name in journals:
+                    raise ValueError("unique NAME=PATH journals required")
+                journals[name] = Path(path)
+            result = backup_research(journals, args.out)
+        elif args.command == "research-restore":
+            from .research_readiness import restore_research
+            result = restore_research(args.manifest, args.out)
         elif args.command in {"ibkr-preflight", "ibkr-capture"}:
             import os
             from .ibkr import load_ibkr_config, ibkr_preflight, capture_ibkr

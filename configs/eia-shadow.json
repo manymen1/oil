@@ -1,0 +1,49 @@
+{
+  "schema": "eia-shadow-spec-v1",
+  "version": "eia-v2-forward-20261007-pilot",
+  "evaluation_start": "2026-10-07T00:00:00Z",
+  "holdout_start": "2026-11-18T00:00:00Z",
+  "evaluation_end": "2026-12-31T00:00:00Z",
+  "rules": {
+    "version": "inventory-continuation-v2-draft",
+    "min_crude_change_mb": "2.0",
+    "confirmation_seconds": 60,
+    "max_decision_delay_seconds": 300,
+    "max_poll_gap_seconds": 180,
+    "max_period_age_days": 10,
+    "max_cot_age_days": 14,
+    "max_spread_ticks": 3,
+    "min_depth": 1,
+    "max_receipt_move": 0.005,
+    "max_volatility_5m": 0.01,
+    "persistence_seconds": 30,
+    "min_confirmation_ticks": 2,
+    "min_persistence_ticks": 1,
+    "min_confirmation_cost_multiple": "1.5",
+    "fee_per_contract_side": "1.00",
+    "slippage_ticks_per_side": 1
+  },
+  "outcome_policy": {
+    "delay_ms": 1000,
+    "max_quote_age_seconds": 2,
+    "fee_per_contract_side": "1.00",
+    "slippage_ticks_per_side": 1,
+    "contracts": 1
+  },
+  "horizon_seconds": 300,
+  "decision_lateness_seconds": 5,
+  "grouping": "eia_reporting_period",
+  "missing_data": "retain_null_exclude_common_comparisons",
+  "baselines": ["no_trade", "inventory_only", "price_only_60s", "inventory_plus_price", "inventory_continuation_v2"],
+  "statistical_method": {
+    "block_groups": 4,
+    "draws": 2000,
+    "seed": 1729,
+    "minimum_train_groups": 52,
+    "minimum_holdout_groups": 26,
+    "minimum_holdout_trades": 10
+  },
+  "extra_round_trip_costs_usd": ["0", "2.00", "5.00"],
+  "latency_stress_ms": [0, 1000, 5000],
+  "fixed_monthly_cost_usd": null
+}
